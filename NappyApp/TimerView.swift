@@ -17,8 +17,9 @@ struct TimerView: View {
                         .foregroundStyle(.secondary)
 
                     timerCard
+                    dailyTotals
                     modeControls
-                    todaySummary
+                    todayEntries
                 }
                 .padding()
             }
@@ -29,8 +30,8 @@ struct TimerView: View {
 
     @ViewBuilder
     private var timerCard: some View {
-        VStack(spacing: 18) {
-            if let mode = model.activeMode {
+        if let mode = model.activeMode {
+            VStack(spacing: 18) {
                 Label(mode.title, systemImage: mode == .nap ? "moon.fill" : "sun.max.fill")
                     .font(.headline)
                     .foregroundStyle(mode == .nap ? .indigo : .orange)
@@ -50,9 +51,6 @@ struct TimerView: View {
                         .padding(.vertical, 8)
                         .background(.indigo.opacity(0.12), in: Capsule())
                         .accessibilityLabel("Sleep cue reminder: look for sleep cues")
-                } else {
-                    Text(mode == .nap ? "Sleep time" : "Time since waking")
-                        .foregroundStyle(.secondary)
                 }
 
                 if mode == .nap {
@@ -62,37 +60,19 @@ struct TimerView: View {
                     .buttonStyle(.borderedProminent)
                     .accessibilityIdentifier(model.isPaused ? "Resume nap" : "Pause nap")
                 }
-            } else {
-                Image(systemName: "moon.stars.fill")
-                    .font(.system(size: 42))
-                    .foregroundStyle(.indigo)
-                Text("Ready when baby is")
-                    .font(.title2.bold())
-                Text("Start a wake timer when the day begins, or a nap timer when sleep starts.")
-                    .multilineTextAlignment(.center)
-                    .foregroundStyle(.secondary)
             }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 28)
+            .padding(.horizontal, 20)
+            .background(.background, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+            .shadow(color: .black.opacity(0.06), radius: 12, y: 5)
         }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 28)
-        .padding(.horizontal, 20)
-        .background(.background, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
-        .shadow(color: .black.opacity(0.06), radius: 12, y: 5)
     }
 
     private var modeControls: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text(model.activeMode == nil ? "Start tracking" : "Switch timer")
-                .font(.headline)
-            HStack(spacing: 12) {
-                modeButton(.wake)
-                modeButton(.nap)
-            }
-            if model.activeMode != nil {
-                Text("Switching saves the current entry first.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
+        HStack(spacing: 12) {
+            modeButton(.wake)
+            modeButton(.nap)
         }
     }
 
@@ -108,21 +88,88 @@ struct TimerView: View {
         .disabled(model.activeMode == mode)
         .accessibilityIdentifier(mode == .wake ? "Start wake timer" : "Start nap timer")
     }
+    private var todayEntries: some View {
+        let dayStart = model.todayTotals().dayStart
+        let entries = dayStart.map { start in
+            model.entries.filter { $0.startedAt >= start && $0.startedAt <= Date.now }
+        } ?? []
 
-    private var todaySummary: some View {
-        let today = model.entries.filter { Calendar.current.isDateInToday($0.startedAt) }
-        return VStack(alignment: .leading, spacing: 8) {
-            Text("Today")
+        return VStack(alignment: .leading, spacing: 10) {
+            Text("Today's entries")
                 .font(.headline)
-            Text(today.isEmpty ? "No completed windows yet." : "\(today.count) completed \(today.count == 1 ? "window" : "windows")")
-                .foregroundStyle(.secondary)
-            if let latest = today.first {
-                Text("Latest: \(latest.mode.shortTitle) · \(durationText(latest.duration))")
-                    .font(.subheadline)
+            if entries.isEmpty {
+                Text("No completed windows today.")
+                    .foregroundStyle(.secondary)
+            } else {
+                ForEach(entries) { entry in
+                    HomeEntryRow(entry: entry)
+                }
             }
         }
         .padding()
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(.background, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+    }
+
+
+    private var dailyTotals: some View {
+        let totals = model.todayTotals()
+        return VStack(alignment: .leading, spacing: 12) {
+            Text("Today's totals")
+                .font(.headline)
+            HStack(spacing: 12) {
+                DailyTotalCard(title: "Total wake", duration: totals.wakeDuration, color: .orange, systemImage: "sun.max.fill")
+                DailyTotalCard(title: "Total sleep", duration: totals.napDuration, color: .indigo, systemImage: "moon.fill")
+            }
+            Text(
+                totals.dayStart.map { "Day started at \(entryTimeFormatter.string(from: $0))" }
+                    ?? "Day starts with the first wake after 6:30 AM."
+            )
+            .font(.caption)
+            .foregroundStyle(.secondary)
+        }
+        .padding()
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(.background, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+    }
+}
+
+private struct DailyTotalCard: View {
+    let title: String
+    let duration: TimeInterval?
+    let color: Color
+    let systemImage: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Label(title, systemImage: systemImage)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(color)
+            Text(durationText(duration))
+                .font(.title2.bold().monospacedDigit())
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(title), \(durationText(duration))")
+    }
+}
+
+private struct HomeEntryRow: View {
+    let entry: SleepEntry
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: entry.mode == .nap ? "moon.fill" : "sun.max.fill")
+                .foregroundStyle(entry.mode == .nap ? .indigo : .orange)
+            Text(entry.mode.shortTitle)
+                .font(.subheadline.weight(.semibold))
+            Text(entryTimeFormatter.string(from: entry.startedAt))
+                .foregroundStyle(.secondary)
+            Spacer()
+            Text(durationText(entry.duration))
+                .font(.subheadline.monospacedDigit())
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(entry.mode.shortTitle), \(entryTimeFormatter.string(from: entry.startedAt)), \(durationText(entry.duration))")
     }
 }

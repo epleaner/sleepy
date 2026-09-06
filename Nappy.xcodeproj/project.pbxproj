@@ -20,6 +20,7 @@
 		A1000000000000000000000B /* Statistics.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000000B /* Statistics.swift */; };
 		A1000000000000000000000C /* BabyTimerUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000000C /* BabyTimerUITests.swift */; };
 		A1000000000000000000000D /* NappyAppUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000000D /* NappyAppUITests.swift */; };
+		A1000000000000000000000E /* NotificationScheduler.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000010 /* NotificationScheduler.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -43,6 +44,7 @@
 		B1000000000000000000000D /* NappyAppUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NappyAppUITests.swift; sourceTree = "<group>"; };
 		B1000000000000000000000E /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		B1000000000000000000000F /* NappyUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = NappyUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		B10000000000000000000010 /* NotificationScheduler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationScheduler.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -52,7 +54,7 @@
 
 /* Begin PBXGroup section */
 		C10000000000000000000003 = {isa = PBXGroup; children = ( C10000000000000000000004, C10000000000000000000005, C10000000000000000000006, ); sourceTree = "<group>"; };
-		C10000000000000000000004 /* Nappy */ = {isa = PBXGroup; children = ( B10000000000000000000001, B10000000000000000000002, B10000000000000000000003, B10000000000000000000004, B10000000000000000000005, B10000000000000000000006, B10000000000000000000007, B1000000000000000000000E, ); path = NappyApp; sourceTree = "<group>"; };
+		C10000000000000000000004 /* Nappy */ = {isa = PBXGroup; children = ( B10000000000000000000001, B10000000000000000000002, B10000000000000000000003, B10000000000000000000004, B10000000000000000000005, B10000000000000000000006, B10000000000000000000007, B1000000000000000000000E, B10000000000000000000010, ); path = NappyApp; sourceTree = "<group>"; };
 		C10000000000000000000005 /* NappyCore */ = {isa = PBXGroup; children = ( B10000000000000000000008, B10000000000000000000009, B1000000000000000000000A, B1000000000000000000000B, ); path = NappyCore; sourceTree = "<group>"; };
 		C10000000000000000000006 /* NappyAppUITests */ = {isa = PBXGroup; children = ( B1000000000000000000000C, B1000000000000000000000D, ); path = NappyAppUITests; sourceTree = "<group>"; };
 		C10000000000000000000007 /* Products */ = {isa = PBXGroup; children = ( B10000000000000000000000, B1000000000000000000000F, ); name = Products; sourceTree = "<group>"; };
@@ -72,7 +74,7 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
-		C10000000000000000000013 /* Sources */ = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = ( A10000000000000000000001, A10000000000000000000002, A10000000000000000000003, A10000000000000000000004, A10000000000000000000005, A10000000000000000000006, A10000000000000000000007, A10000000000000000000008, A10000000000000000000009, A1000000000000000000000A, A1000000000000000000000B, ); runOnlyForDeploymentPostprocessing = 0; };
+		C10000000000000000000013 /* Sources */ = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = ( A10000000000000000000001, A10000000000000000000002, A10000000000000000000003, A10000000000000000000004, A10000000000000000000005, A10000000000000000000006, A10000000000000000000007, A10000000000000000000008, A10000000000000000000009, A1000000000000000000000A, A1000000000000000000000B, A1000000000000000000000E, ); runOnlyForDeploymentPostprocessing = 0; };
 		C10000000000000000000016 /* Sources */ = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = ( A1000000000000000000000C, A1000000000000000000000D, ); runOnlyForDeploymentPostprocessing = 0; };
 /* End PBXSourcesBuildPhase section */
 

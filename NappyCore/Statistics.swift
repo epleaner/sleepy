@@ -37,6 +37,18 @@ public struct DurationAverages: Equatable {
     }
 }
 
+public struct DailyTotals: Equatable {
+    public let dayStart: Date?
+    public let wakeDuration: TimeInterval?
+    public let napDuration: TimeInterval?
+
+    public init(dayStart: Date?, wakeDuration: TimeInterval?, napDuration: TimeInterval?) {
+        self.dayStart = dayStart
+        self.wakeDuration = wakeDuration
+        self.napDuration = napDuration
+    }
+}
+
 public enum Statistics {
     public static func averages(
         for entries: [SleepEntry],
@@ -58,6 +70,59 @@ public enum Statistics {
             napAverage: average(napDurations),
             wakeCount: wakeDurations.count,
             napCount: napDurations.count
+        )
+    }
+
+    public static func dailyTotals(
+        for entries: [SleepEntry],
+        activeMode: TimerMode? = nil,
+        activeStartedAt: Date? = nil,
+        activeDuration: TimeInterval = 0,
+        now: Date = Date(),
+        calendar: Calendar = .current
+    ) -> DailyTotals {
+        let calendarDayStart = calendar.startOfDay(for: now)
+        guard let cutoff = calendar.date(byAdding: .minute, value: 390, to: calendarDayStart),
+              let nextCalendarDay = calendar.date(byAdding: .day, value: 1, to: calendarDayStart) else {
+            return DailyTotals(dayStart: nil, wakeDuration: nil, napDuration: nil)
+        }
+
+        var wakeStarts = entries
+            .filter { $0.mode == .wake && $0.startedAt >= cutoff && $0.startedAt < nextCalendarDay }
+            .map(\.startedAt)
+        if activeMode == .wake,
+           let activeStartedAt,
+           activeStartedAt >= cutoff,
+           activeStartedAt < nextCalendarDay {
+            wakeStarts.append(activeStartedAt)
+        }
+
+        guard let dayStart = wakeStarts.min() else {
+            return DailyTotals(dayStart: nil, wakeDuration: nil, napDuration: nil)
+        }
+
+        let relevantEntries = entries.filter {
+            $0.startedAt >= dayStart && $0.startedAt <= now
+        }
+        var wakeDuration = relevantEntries.filter { $0.mode == .wake }.reduce(0) { $0 + $1.duration }
+        var napDuration = relevantEntries.filter { $0.mode == .nap }.reduce(0) { $0 + $1.duration }
+
+        if let activeMode,
+           let activeStartedAt,
+           activeStartedAt >= dayStart,
+           activeStartedAt <= now {
+            switch activeMode {
+            case .wake:
+                wakeDuration += max(0, activeDuration)
+            case .nap:
+                napDuration += max(0, activeDuration)
+            }
+        }
+
+        return DailyTotals(
+            dayStart: dayStart,
+            wakeDuration: wakeDuration,
+            napDuration: napDuration
         )
     }
 

@@ -59,6 +59,26 @@ struct StatisticsTests {
         #expect(averages.napCount == 1)
     }
 
+    @Test func dailyTotalsStartAtFirstWakeAfterSixThirty() {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+        let now = date("2026-09-05T16:00:00Z")
+        let beforeCutoff = date("2026-09-05T06:15:00Z")
+        let firstWake = date("2026-09-05T07:00:00Z")
+        let napStart = date("2026-09-05T08:15:00Z")
+        let entries = [
+            SleepEntry(mode: .wake, startedAt: beforeCutoff, endedAt: beforeCutoff, duration: 999),
+            SleepEntry(mode: .wake, startedAt: firstWake, endedAt: firstWake, duration: 4_500),
+            SleepEntry(mode: .nap, startedAt: napStart, endedAt: napStart, duration: 2_700)
+        ]
+
+        let totals = Statistics.dailyTotals(for: entries, now: now, calendar: calendar)
+
+        #expect(totals.dayStart == firstWake)
+        #expect(totals.wakeDuration == 4_500)
+        #expect(totals.napDuration == 2_700)
+    }
+
     @Test func entriesRoundTripThroughStore() {
         let defaults = UserDefaults(suiteName: "NappyCoreTests.store")!
         defaults.removePersistentDomain(forName: "NappyCoreTests.store")
