@@ -1,3 +1,5 @@
+if (import.meta.env.DEV) import("./styles.css");
+
 const STORAGE_KEY = "nappy.pwa.entries";
 const WAKE_CUE_SECONDS = 75 * 60;
 const NAP_REMINDER_SECONDS = 105 * 60;
@@ -394,7 +396,14 @@ function saveEntries() {
 }
 
 function registerServiceWorker() {
-  if ("serviceWorker" in navigator) navigator.serviceWorker.register("service-worker.js").catch(() => {});
+  if (!("serviceWorker" in navigator)) return;
+  const localDevelopment = location.hostname === "localhost" || location.hostname === "127.0.0.1" || location.hostname.endsWith(".localhost");
+  if (localDevelopment) {
+    navigator.serviceWorker.getRegistrations().then((registrations) => Promise.all(registrations.map((registration) => registration.unregister())));
+    caches.keys().then((keys) => Promise.all(keys.map((key) => caches.delete(key))));
+    return;
+  }
+  navigator.serviceWorker.register("service-worker.js").catch(() => {});
 }
 
 function startOfDay(date) {
