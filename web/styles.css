@@ -37,6 +37,13 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px s
 .muted { color: var(--muted); }
 
 .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 20px; margin-bottom: 20px; }
+
+.settings-stack { display: grid; gap: 20px; }
+.settings-copy { margin: 0 0 16px; color: var(--muted); font-size: .95rem; }
+.household-id { display: block; overflow-wrap: anywhere; padding: 12px 14px; border: 1px solid var(--border); border-radius: 3px; background: var(--panel-soft); color: var(--accent); font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; font-size: .95rem; letter-spacing: .08em; }
+.danger-panel { border-color: var(--danger); }
+.danger-button { min-height: 48px; border: 1px solid var(--danger); border-radius: 999px; padding: 10px 16px; background: transparent; color: var(--danger); font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; font-size: .85rem; font-weight: 500; }
+.danger-button:hover { background: rgba(212,155,155,.12); }
 .panel-title { margin: 0 0 14px; color: var(--ink); font-size: 1.2rem; font-weight: 400; }
 
 .timer-card { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 34px 20px; margin-bottom: 20px; text-align: center; }
@@ -44,8 +51,7 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px s
 .timer-kind.wake, .total-label.wake { color: var(--wake); }
 .timer-kind.nap, .total-label.nap { color: var(--sleep); }
 .timer-value { margin: 16px 0; color: var(--ink); font-size: clamp(3.5rem, 15vw, 5rem); line-height: .95; font-variant-numeric: tabular-nums; letter-spacing: -.06em; font-weight: 400; }
-.timer-note { margin: 0; color: var(--muted); }
-.cue-note { display: inline-block; margin: 0; padding: 9px 14px; border-radius: 3px; background: rgba(154,165,212,.18); color: var(--sleep); font-weight: 400; }
+.timer-note { margin: 0; color: var(--muted); font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; font-size: .78rem; }
 .pause-note { margin: 0; color: var(--muted); }
 
 .totals-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
@@ -85,7 +91,7 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px s
 .average-value { display: block; margin: 10px 0 5px; color: var(--ink); font-size: 1.6rem; font-weight: 400; font-variant-numeric: tabular-nums; }
 .average-count { color: var(--muted); font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; font-size: .78rem; }
 
-.tab-bar { position: fixed; z-index: 10; right: 50%; bottom: max(18px, env(safe-area-inset-bottom)); display: grid; grid-template-columns: repeat(3, 1fr); width: min(490px, calc(100% - 44px)); transform: translateX(50%); padding: 5px; background: rgba(23,20,18,.96); border: 1px solid var(--border); border-radius: 999px; backdrop-filter: blur(18px); }
+.tab-bar { position: fixed; z-index: 10; right: 50%; bottom: max(18px, env(safe-area-inset-bottom)); display: grid; grid-template-columns: repeat(4, 1fr); width: min(560px, calc(100% - 44px)); transform: translateX(50%); padding: 5px; background: rgba(23,20,18,.96); border: 1px solid var(--border); border-radius: 999px; backdrop-filter: blur(18px); }
 .tab-button { display: grid; justify-items: center; gap: 2px; min-height: 58px; border: 0; border-radius: 999px; background: transparent; color: var(--muted); font-size: .78rem; font-weight: 500; }
 .tab-button.active { background: var(--panel-soft); color: var(--accent); }
 .tab-icon { font-size: 1.55rem; line-height: 1; }

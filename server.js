@@ -157,6 +157,10 @@ async function createStore() {
       await assertHousehold(pool, householdId);
       const result = await pool.query("DELETE FROM entries WHERE household_id = $1 AND id = $2", [householdId, entryId]);
       return Boolean(result.rowCount);
+    },
+    async deleteHousehold(householdId) {
+      const result = await pool.query("DELETE FROM households WHERE id = $1", [householdId]);
+      return Boolean(result.rowCount);
     }
   };
 }
@@ -233,6 +237,14 @@ function createMemoryStore() {
       const remaining = householdEntries.filter((entry) => entry.id !== entryId);
       entries.set(householdId, remaining);
       return remaining.length !== householdEntries.length;
+    },
+    async deleteHousehold(householdId) {
+      if (!households.has(householdId)) return false;
+      households.delete(householdId);
+      entries.delete(householdId);
+      timers.delete(householdId);
+      timerRevisions.delete(householdId);
+      return true;
     }
   };
 }
@@ -272,6 +284,11 @@ async function handleApi(request, response, parts) {
   if (parts.length === 4 && parts[3] === "timer" && request.method === "POST") {
     const { action, mode } = parseTimerAction(await readJson(request));
     sendJson(response, 200, await store.mutateTimer(householdId, action, mode));
+    return;
+  }
+  if (parts.length === 3 && request.method === "DELETE") {
+    if (await store.deleteHousehold(householdId)) sendJson(response, 204);
+    else sendJson(response, 404, { error: "Household not found" });
     return;
   }
   if (parts.length === 3 && request.method === "GET") {

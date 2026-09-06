@@ -62,6 +62,13 @@
       <div id="insights-content"></div>
     </section>
 
+    <section id="settings-screen" class="screen hidden" aria-labelledby="settings-screen-title">
+      <header class="screen-header compact-header">
+        <h1 id="settings-screen-title">Settings</h1>
+      </header>
+      <div id="settings-content"></div>
+    </section>
+
     <nav class="tab-bar" aria-label="Primary navigation">
       <button class="tab-button active" data-tab="timer" aria-label="Timer" aria-selected="true">
         <span class="tab-icon" aria-hidden="true">◴</span><span>Timer</span>
@@ -71,6 +78,9 @@
       </button>
       <button class="tab-button" data-tab="insights" aria-label="Insights" aria-selected="false">
         <span class="tab-icon" aria-hidden="true">▥</span><span>Insights</span>
+      </button>
+      <button class="tab-button" data-tab="settings" aria-label="Settings" aria-selected="false">
+        <span class="tab-icon" aria-hidden="true">⚙</span><span>Settings</span>
       </button>
     </nav>
   </main>
@@ -101,6 +111,6 @@
   </div>
 
   <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
-  <script type="module" src="app.js?v=7"></script>
+  <script type="module" src="app.js?v=8"></script>
 </body>
 </html>

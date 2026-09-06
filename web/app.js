@@ -14,6 +14,7 @@ let active = null;
 let timerRevision = 0;
 let serverClockOffset = 0;
 let timerMutationInFlight = false;
+let householdDeletionInFlight = false;
 let selectedTab = "timer";
 let selectedPeriod = "day";
 let notificationTimers = [];
@@ -28,7 +29,7 @@ const householdCode = document.querySelector("#household-code");
 const timerScreen = document.querySelector("#timer-screen");
 const entriesScreen = document.querySelector("#entries-screen");
 const insightsScreen = document.querySelector("#insights-screen");
-const toast = document.querySelector("#toast");
+const settingsScreen = document.querySelector("#settings-screen");
 
 document.querySelector("#create-household").addEventListener("click", createHousehold);
 document.querySelector("#join-form").addEventListener("submit", (event) => {
@@ -36,6 +37,9 @@ document.querySelector("#join-form").addEventListener("submit", (event) => {
   joinHousehold(householdCode.value);
 });
 document.querySelector("#share-household").addEventListener("click", shareHousehold);
+document.querySelector("#settings-content").addEventListener("click", (event) => {
+  if (event.target.closest("[data-action='delete-household']")) void deleteHousehold();
+});
 document.querySelectorAll(".tab-button").forEach((button) => {
   button.addEventListener("click", () => {
     selectedTab = button.dataset.tab;
@@ -228,6 +232,7 @@ function render() {
   timerScreen.classList.toggle("hidden", selectedTab !== "timer");
   entriesScreen.classList.toggle("hidden", selectedTab !== "entries");
   insightsScreen.classList.toggle("hidden", selectedTab !== "insights");
+  settingsScreen.classList.toggle("hidden", selectedTab !== "settings");
   document.querySelectorAll(".tab-button").forEach((button) => {
     const isActive = button.dataset.tab === selectedTab;
     button.classList.toggle("active", isActive);
@@ -236,6 +241,7 @@ function render() {
   renderTimerScreen();
   renderEntriesScreen();
   renderInsightsScreen();
+  renderSettingsScreen();
 }
 
 function renderTimerScreen() {
@@ -274,11 +280,10 @@ function renderTimerScreen() {
 
 function renderActiveTimer() {
   const elapsed = elapsedSeconds();
-  const isCueTime = active.mode === "wake" && elapsed >= WAKE_CUE_SECONDS;
   const status = active.isPaused
     ? '<p class="pause-note">Paused</p>'
-    : isCueTime
-      ? '<p class="cue-note" role="status">Look for sleep cues</p>'
+    : active.mode === "wake"
+      ? `<p class="timer-note">sleepies starting around ${formatTime(sleepiesStartAt(active.startedAt))}</p>`
       : "";
   const pauseButton = active.mode === "nap"
     ? `<button class="primary-button pause-button" data-action="pause" type="button" ${timerMutationInFlight ? "disabled" : ""}>${active.isPaused ? "Resume nap" : "Pause nap"}</button>`
@@ -381,6 +386,23 @@ function renderInsightsScreen() {
     selectedPeriod = button.dataset.period;
     render();
   }));
+}
+
+function renderSettingsScreen() {
+  document.querySelector("#settings-content").innerHTML = `
+    <div class="settings-stack">
+      <section class="panel" aria-labelledby="household-settings-title">
+        <h2 id="household-settings-title" class="panel-title">Household</h2>
+        <p class="settings-copy">Share this ID with anyone who should join this household.</p>
+        <code class="household-id">${householdId}</code>
+      </section>
+      <section class="panel danger-panel" aria-labelledby="delete-household-title">
+        <h2 id="delete-household-title" class="panel-title">Delete household</h2>
+        <p class="settings-copy">This permanently deletes the household, its completed entries, and any active timer.</p>
+        <button class="danger-button" data-action="delete-household" type="button" ${householdDeletionInFlight ? "disabled" : ""}>Delete household</button>
+      </section>
+    </div>
+  `;
 }
 
 function renderAverage(title, duration, count, color, icon) {
@@ -555,6 +577,34 @@ async function shareHousehold() {
   }
 }
 
+async function deleteHousehold() {
+  if (!householdId || householdDeletionInFlight) return;
+  if (!window.confirm("Delete this household and all of its entries? This cannot be undone.")) return;
+  householdDeletionInFlight = true;
+  render();
+  try {
+    await api(`/households/${householdId}`, { method: "DELETE" });
+    cancelWakeNotifications();
+    localStorage.removeItem(HOUSEHOLD_STORAGE_KEY);
+    householdId = null;
+    entries = [];
+    active = null;
+    timerRevision = 0;
+    serverClockOffset = 0;
+    selectedTab = "timer";
+    const url = new URL(window.location.href);
+    url.searchParams.delete("household");
+    window.history.replaceState({}, "", url);
+    showGate();
+    showToast("Household deleted");
+  } catch (error) {
+    showToast(error.message);
+  } finally {
+    householdDeletionInFlight = false;
+    if (householdId) render();
+  }
+}
+
 function normalizeEntry(entry) {
   return { ...entry, startedAt: Number(entry.startedAt), endedAt: Number(entry.endedAt), duration: Number(entry.duration) };
 }
@@ -597,6 +647,12 @@ function timerText(seconds) {
   const minutes = Math.floor((totalSeconds % 3600) / 60);
   const remainder = totalSeconds % 60;
   return hours ? `${hours}:${String(minutes).padStart(2, "0")}:${String(remainder).padStart(2, "0")}` : `${String(minutes).padStart(2, "0")}:${String(remainder).padStart(2, "0")}`;
+}
+
+function sleepiesStartAt(startedAt) {
+  const target = startedAt + WAKE_CUE_SECONDS * 1000;
+  const fiveMinutes = 5 * 60 * 1000;
+  return new Date(Math.ceil(target / fiveMinutes) * fiveMinutes);
 }
 
 function formatDuration(seconds) {
