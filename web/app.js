@@ -5,6 +5,27 @@ const API_ROOT = "/api";
 const WAKE_CUE_SECONDS = 75 * 60;
 const NAP_REMINDER_SECONDS = 105 * 60;
 
+
+const ICON_PATHS = {
+  timer: '<circle cx="12" cy="12" r="8"></circle><path d="M12 8v4l2.5 2.5"></path>',
+  list: '<path d="M8 6h11M8 12h11M8 18h11M4 6h.01M4 12h.01M4 18h.01"></path>',
+  chart: '<path d="M4 19V5M4 19h16M7 16l3-4 3 2 4-6"></path>',
+  settings: '<path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h10M18 18h2"></path><circle cx="16" cy="6" r="2"></circle><circle cx="10" cy="12" r="2"></circle><circle cx="16" cy="18" r="2"></circle>',
+  sun: '<circle cx="12" cy="12" r="3.5"></circle><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"></path>',
+  moon: '<path d="M20.5 15.5A8.5 8.5 0 0 1 8.5 3.5 8.5 8.5 0 1 0 20.5 15.5z"></path>',
+  edit: '<path d="M4 20h4L19 9a2.12 2.12 0 0 0-3-3L5 17v3zM14.5 7.5l2 2"></path>',
+  trash: '<path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"></path>',
+  close: '<path d="M6 6l12 12M18 6L6 18"></path>',
+  copy: '<rect x="8" y="8" width="12" height="12" rx="2"></rect><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"></path>'
+};
+
+function icon(name) {
+  return `<svg class="ui-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICON_PATHS[name]}</svg>`;
+}
+
+document.querySelectorAll("[data-icon]").forEach((node) => {
+  node.innerHTML = icon(node.dataset.icon);
+});
 const params = new URLSearchParams(window.location.search);
 if (params.has("reset") && !params.has("household")) localStorage.removeItem(HOUSEHOLD_STORAGE_KEY);
 
@@ -38,6 +59,7 @@ document.querySelector("#join-form").addEventListener("submit", (event) => {
 });
 document.querySelector("#share-household").addEventListener("click", shareHousehold);
 document.querySelector("#settings-content").addEventListener("click", (event) => {
+  if (event.target.closest("[data-action='copy-household']")) void copyHouseholdId();
   if (event.target.closest("[data-action='delete-household']")) void deleteHousehold();
 });
 document.querySelectorAll(".tab-button").forEach((button) => {
@@ -252,8 +274,8 @@ function renderTimerScreen() {
   document.querySelector("#daily-totals").innerHTML = `
     <h2 id="totals-title" class="panel-title">Today's totals</h2>
     <div class="totals-grid">
-      ${renderTotal("Total wake", totals.wakeDuration, "wake", "☀")}
-      ${renderTotal("Total sleep", totals.napDuration, "nap", "☾")}
+      ${renderTotal("Total wake", totals.wakeDuration, "wake", "sun")}
+      ${renderTotal("Total sleep", totals.napDuration, "nap", "moon")}
     </div>
     <p class="panel-note">${totals.dayStart ? `Day started at ${formatTime(totals.dayStart)}` : "Day starts with the first wake after 6:30 AM."}</p>
   `;
@@ -290,7 +312,7 @@ function renderActiveTimer() {
     : "";
   return `
     <section class="timer-card" aria-label="${active.mode === "nap" ? "Nap" : "Wake window"} timer">
-      <div class="timer-kind ${active.mode}">${active.mode === "nap" ? "☾ Nap" : "☀ Wake window"}</div>
+      <div class="timer-kind ${active.mode}">${icon(active.mode === "nap" ? "moon" : "sun")}<span>${active.mode === "nap" ? "Nap" : "Wake window"}</span></div>
       <div class="timer-value" aria-live="off">${timerText(elapsed)}</div>
       ${status}
       <div class="timer-actions">
@@ -304,13 +326,12 @@ function renderActiveTimer() {
 function renderModeButton(mode) {
   const isActive = active?.mode === mode;
   return `<button class="primary-button ${mode}" data-action="start" data-mode="${mode}" type="button" aria-label="${mode === "wake" ? "Start wake timer" : "Start nap timer"}" ${isActive || timerMutationInFlight ? "disabled" : ""}>
-    ${mode === "wake" ? "☀ Start wake" : "☾ Start nap"}
+    ${icon(mode === "wake" ? "sun" : "moon")}<span>${mode === "wake" ? "Start wake" : "Start nap"}</span>
   </button>`;
 }
-
-function renderTotal(title, duration, color, icon) {
+function renderTotal(title, duration, color, iconName) {
   return `<div class="total-card">
-    <span class="total-label ${color}"><span aria-hidden="true">${icon}</span>${title}</span>
+    <span class="total-label ${color}">${icon(iconName)}<span>${title}</span></span>
     <span class="total-value">${formatDuration(duration)}</span>
   </div>`;
 }
@@ -318,8 +339,7 @@ function renderTotal(title, duration, color, icon) {
 function renderHomeEntry(entry) {
   return `<div class="entry-row">
     <div class="entry-main">
-      <span aria-hidden="true">${entry.mode === "nap" ? "☾" : "☀"}</span>
-      <span class="entry-type">${entry.mode === "nap" ? "Sleep" : "Wake"}</span>
+      ${icon(entry.mode === "nap" ? "moon" : "sun")}<span class="entry-type">${entry.mode === "nap" ? "Sleep" : "Wake"}</span>
       <span class="entry-time">${formatTime(new Date(entry.startedAt))}</span>
     </div>
     <span class="entry-duration">${formatDuration(entry.duration)}</span>
@@ -352,14 +372,13 @@ function renderEntriesScreen() {
 function renderManagedEntry(entry) {
   return `<div class="entry-row">
     <div class="entry-main">
-      <span aria-hidden="true">${entry.mode === "nap" ? "☾" : "☀"}</span>
-      <span class="entry-type">${entry.mode === "nap" ? "Sleep" : "Wake"}</span>
+      ${icon(entry.mode === "nap" ? "moon" : "sun")}<span class="entry-type">${entry.mode === "nap" ? "Sleep" : "Wake"}</span>
       <span class="entry-time">${formatTime(new Date(entry.startedAt))} – ${formatTime(new Date(entry.endedAt))}</span>
     </div>
     <span class="entry-duration">${formatDuration(entry.duration)}</span>
     <div class="entry-actions">
-      <button class="icon-button" data-action="edit" data-id="${entry.id}" type="button" aria-label="Edit ${entry.mode === "nap" ? "sleep" : "wake"} entry">✎</button>
-      <button class="icon-button delete-button" data-action="delete" data-id="${entry.id}" type="button" aria-label="Delete ${entry.mode === "nap" ? "sleep" : "wake"} entry">×</button>
+      <button class="icon-button" data-action="edit" data-id="${entry.id}" type="button" aria-label="Edit ${entry.mode === "nap" ? "sleep" : "wake"} entry">${icon("edit")}</button>
+      <button class="icon-button delete-button" data-action="delete" data-id="${entry.id}" type="button" aria-label="Delete ${entry.mode === "nap" ? "sleep" : "wake"} entry">${icon("trash")}</button>
     </div>
   </div>`;
 }
@@ -374,8 +393,8 @@ function renderInsightsScreen() {
       <h2 id="average-title">${periodTitle(selectedPeriod)}</h2>
       <p class="muted">Average completed window</p>
       <div class="average-grid">
-        ${renderAverage("Wake", averages.wakeAverage, averages.wakeCount, "wake", "☀")}
-        ${renderAverage("Sleep", averages.napAverage, averages.napCount, "nap", "☾")}
+        ${renderAverage("Wake", averages.wakeAverage, averages.wakeCount, "wake", "sun")}
+        ${renderAverage("Sleep", averages.napAverage, averages.napCount, "nap", "moon")}
       </div>
       ${averages.wakeCount === 0 && averages.napCount === 0
         ? '<p class="empty-state panel">Not enough data. Complete a wake window or nap to see averages.</p>'
@@ -394,7 +413,10 @@ function renderSettingsScreen() {
       <section class="panel" aria-labelledby="household-settings-title">
         <h2 id="household-settings-title" class="panel-title">Household</h2>
         <p class="settings-copy">Share this ID with anyone who should join this household.</p>
-        <code class="household-id">${householdId}</code>
+        <button class="copy-id-button" data-action="copy-household" type="button" aria-label="Copy household ID ${householdId}">
+          <code class="household-id">${householdId}</code>
+          ${icon("copy")}
+        </button>
       </section>
       <section class="panel danger-panel" aria-labelledby="delete-household-title">
         <h2 id="delete-household-title" class="panel-title">Delete household</h2>
@@ -405,9 +427,9 @@ function renderSettingsScreen() {
   `;
 }
 
-function renderAverage(title, duration, count, color, icon) {
+function renderAverage(title, duration, count, color, iconName) {
   return `<div class="average-card">
-    <span class="total-label ${color}"><span aria-hidden="true">${icon}</span>${title}</span>
+    <span class="total-label ${color}">${icon(iconName)}<span>${title}</span></span>
     <span class="average-value">${formatDuration(duration)}</span>
     <span class="average-count">${count} ${count === 1 ? "entry" : "entries"}</span>
   </div>`;
@@ -574,6 +596,16 @@ async function shareHousehold() {
     showToast("Household link copied");
   } catch {
     showToast("Could not share the household link");
+  }
+}
+
+async function copyHouseholdId() {
+  if (!householdId) return;
+  try {
+    await navigator.clipboard.writeText(householdId);
+    showToast("Household ID copied");
+  } catch {
+    showToast("Could not copy household ID");
   }
 }
 

@@ -71,16 +71,16 @@
 
     <nav class="tab-bar" aria-label="Primary navigation">
       <button class="tab-button active" data-tab="timer" aria-label="Timer" aria-selected="true">
-        <span class="tab-icon" aria-hidden="true">◴</span><span>Timer</span>
+        <span class="tab-icon" data-icon="timer"></span><span>Timer</span>
       </button>
       <button class="tab-button" data-tab="entries" aria-label="Entries" aria-selected="false">
-        <span class="tab-icon" aria-hidden="true">☷</span><span>Entries</span>
+        <span class="tab-icon" data-icon="list"></span><span>Entries</span>
       </button>
       <button class="tab-button" data-tab="insights" aria-label="Insights" aria-selected="false">
-        <span class="tab-icon" aria-hidden="true">▥</span><span>Insights</span>
+        <span class="tab-icon" data-icon="chart"></span><span>Insights</span>
       </button>
       <button class="tab-button" data-tab="settings" aria-label="Settings" aria-selected="false">
-        <span class="tab-icon" aria-hidden="true">⚙</span><span>Settings</span>
+        <span class="tab-icon" data-icon="settings"></span><span>Settings</span>
       </button>
     </nav>
   </main>
@@ -89,7 +89,7 @@
     <form id="edit-form" class="modal" aria-labelledby="edit-title">
       <div class="modal-header">
         <h2 id="edit-title">Edit entry</h2>
-        <button id="cancel-edit" class="icon-button" type="button" aria-label="Cancel edit">×</button>
+        <button id="cancel-edit" class="icon-button" type="button" aria-label="Cancel edit"><span data-icon="close"></span></button>
       </div>
       <label>Type
         <select id="edit-mode" name="mode">
