@@ -1,17 +1,5 @@
 import "./styles.css";
-import { icon as fontAwesomeIcon } from "@fortawesome/fontawesome-svg-core";
-import {
-  faChartLine,
-  faClock,
-  faCopy,
-  faList,
-  faMoon,
-  faPen,
-  faSliders,
-  faSun,
-  faTrash,
-  faXmark
-} from "@fortawesome/free-solid-svg-icons";
+import "@phosphor-icons/web/regular";
 
 const HOUSEHOLD_STORAGE_KEY = "nappy.household.id";
 const API_ROOT = "/api";
@@ -19,20 +7,21 @@ const WAKE_CUE_SECONDS = 75 * 60;
 const NAP_REMINDER_SECONDS = 105 * 60;
 
 const ICONS = {
-  timer: faClock,
-  list: faList,
-  chart: faChartLine,
-  settings: faSliders,
-  sun: faSun,
-  moon: faMoon,
-  edit: faPen,
-  trash: faTrash,
-  close: faXmark,
-  copy: faCopy
+  timer: "clock",
+  list: "list",
+  chart: "chart-line",
+  settings: "sliders",
+  sun: "sun",
+  moon: "moon",
+  edit: "pencil-simple",
+  trash: "trash",
+  close: "x",
+  copy: "copy",
+  plus: "plus"
 };
 
 function icon(name) {
-  return fontAwesomeIcon(ICONS[name], { classes: ["ui-icon"], attributes: { "aria-hidden": "true" } }).html.join("");
+  return `<i class="ph ph-${ICONS[name]} ui-icon" aria-hidden="true"></i>`;
 }
 
 document.querySelectorAll("[data-icon]").forEach((node) => {
@@ -70,6 +59,7 @@ document.querySelector("#join-form").addEventListener("submit", (event) => {
   joinHousehold(householdCode.value);
 });
 document.querySelector("#share-household").addEventListener("click", shareHousehold);
+document.querySelector("#add-entry").addEventListener("click", openNewEntry);
 document.querySelector("#settings-content").addEventListener("click", (event) => {
   if (event.target.closest("[data-action='copy-household']")) void copyHouseholdId();
   if (event.target.closest("[data-action='delete-household']")) void deleteHousehold();
@@ -554,9 +544,20 @@ function openEditor(id) {
   const entry = entries.find((candidate) => candidate.id === id);
   if (!entry) return;
   editingEntryId = id;
+  document.querySelector("#edit-title").textContent = "Edit entry";
   document.querySelector("#edit-mode").value = entry.mode;
   document.querySelector("#edit-started").value = toLocalInputValue(new Date(entry.startedAt));
   document.querySelector("#edit-duration").value = String(Math.floor(entry.duration / 60));
+  document.querySelector("#edit-modal").classList.remove("hidden");
+  document.querySelector("#edit-mode").focus();
+}
+
+function openNewEntry() {
+  editingEntryId = null;
+  document.querySelector("#edit-title").textContent = "Add entry";
+  document.querySelector("#edit-mode").value = "wake";
+  document.querySelector("#edit-started").value = toLocalInputValue(new Date());
+  document.querySelector("#edit-duration").value = "0";
   document.querySelector("#edit-modal").classList.remove("hidden");
   document.querySelector("#edit-mode").focus();
 }
@@ -568,15 +569,18 @@ function closeEditor() {
 
 async function saveEditedEntry(event) {
   event.preventDefault();
-  const entry = entries.find((candidate) => candidate.id === editingEntryId);
-  if (!entry) return;
   const startedAt = new Date(document.querySelector("#edit-started").value).getTime();
   const duration = Math.max(0, Number(document.querySelector("#edit-duration").value) || 0) * 60;
   if (!Number.isFinite(startedAt)) return;
-  const updated = { ...entry, mode: document.querySelector("#edit-mode").value, startedAt, duration, endedAt: startedAt + duration * 1000 };
+  const entry = entries.find((candidate) => candidate.id === editingEntryId);
+  const payload = { mode: document.querySelector("#edit-mode").value, startedAt, duration, endedAt: startedAt + duration * 1000 };
   try {
-    const saved = await api(`/households/${householdId}/entries/${entry.id}`, { method: "PUT", body: JSON.stringify(updated) });
-    entries = entries.map((candidate) => candidate.id === entry.id ? normalizeEntry(saved) : candidate).sort((a, b) => b.startedAt - a.startedAt);
+    const saved = entry
+      ? await api(`/households/${householdId}/entries/${entry.id}`, { method: "PUT", body: JSON.stringify({ ...entry, ...payload }) })
+      : await api(`/households/${householdId}/entries`, { method: "POST", body: JSON.stringify(payload) });
+    entries = entry
+      ? entries.map((candidate) => candidate.id === entry.id ? normalizeEntry(saved) : candidate).sort((a, b) => b.startedAt - a.startedAt)
+      : [normalizeEntry(saved), ...entries].sort((a, b) => b.startedAt - a.startedAt);
     closeEditor();
     render();
   } catch (error) {
