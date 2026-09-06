@@ -1,4 +1,4 @@
-const CACHE_NAME = "nappy-pwa-v8";
+const CACHE_NAME = "nappy-pwa-v9";
 const APP_SHELL = ["./", "./index.html"];
 
 self.addEventListener("install", (event) => {
@@ -15,6 +15,10 @@ self.addEventListener("activate", (event) => {
 
 self.addEventListener("fetch", (event) => {
   if (event.request.method !== "GET") return;
+  if (new URL(event.request.url).pathname.startsWith("/api/")) {
+    event.respondWith(fetch(event.request));
+    return;
+  }
   event.respondWith(
     caches.match(event.request).then((cached) => cached || fetch(event.request).then((response) => {
       const copy = response.clone();
