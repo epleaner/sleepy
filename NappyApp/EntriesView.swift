@@ -19,21 +19,36 @@ struct EntriesView: View {
                         ForEach(groupedEntries, id: \.0) { day, entries in
                             Section(entryDateFormatter.string(from: day)) {
                                 ForEach(entries) { entry in
-                                    EntryRow(entry: entry)
-                                        .contentShape(Rectangle())
-                                        .onTapGesture { editingEntry = entry }
+                                    HStack(spacing: 8) {
+                                        Button { editingEntry = entry } label: {
+                                            EntryRow(entry: entry)
+                                        }
+                                        .buttonStyle(.plain)
+                                        .accessibilityIdentifier("Edit \(entry.mode.shortTitle) entry")
                                         .accessibilityHint("Double tap to edit")
-                                        .swipeActions(edge: .trailing, allowsFullSwipe: true) {
-                                            Button(role: .destructive) { model.delete(entry) } label: {
-                                                Label("Delete", systemImage: "trash")
-                                            }
+
+                                        Menu {
+                                            Button("Edit", systemImage: "pencil") { editingEntry = entry }
+                                            Button("Delete", systemImage: "trash", role: .destructive) { model.delete(entry) }
+                                        } label: {
+                                            Image(systemName: "ellipsis.circle")
+                                                .font(.title3)
+                                                .foregroundStyle(.secondary)
                                         }
-                                        .swipeActions(edge: .leading, allowsFullSwipe: false) {
-                                            Button { editingEntry = entry } label: {
-                                                Label("Edit", systemImage: "pencil")
-                                            }
-                                            .tint(.indigo)
+                                        .accessibilityIdentifier("Manage \(entry.mode.shortTitle) entry")
+                                        .accessibilityLabel("Manage \(entry.mode.shortTitle) entry")
+                                    }
+                                    .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                                        Button(role: .destructive) { model.delete(entry) } label: {
+                                            Label("Delete", systemImage: "trash")
                                         }
+                                    }
+                                    .swipeActions(edge: .leading, allowsFullSwipe: false) {
+                                        Button { editingEntry = entry } label: {
+                                            Label("Edit", systemImage: "pencil")
+                                        }
+                                        .tint(.indigo)
+                                    }
                                 }
                             }
                         }

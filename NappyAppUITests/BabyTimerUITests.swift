@@ -32,14 +32,13 @@ final class BabyTimerUITests: XCTestCase {
         app.buttons["Start nap timer"].tap()
         app.tabBars.buttons["Entries"].tap()
 
-        let wakeRow = app.cells.firstMatch
+        let wakeRow = app.buttons["Edit Wake entry"]
         XCTAssertTrue(wakeRow.waitForExistence(timeout: 2))
         wakeRow.tap()
-        XCTAssertTrue(app.navigationBars["Edit entry"].waitForExistence(timeout: 2))
+        XCTAssertTrue(app.buttons["Save"].waitForExistence(timeout: 2))
         app.buttons["Save"].tap()
 
-        let wakeRowAfterSave = app.cells.firstMatch
-        wakeRowAfterSave.swipeLeft()
+        app.buttons["Manage Wake entry"].tap()
         app.buttons["Delete"].tap()
         XCTAssertTrue(app.staticTexts["No entries yet"].waitForExistence(timeout: 2))
     }
