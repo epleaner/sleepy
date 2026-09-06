@@ -9,7 +9,6 @@ const params = new URLSearchParams(window.location.search);
 if (params.has("reset") && !params.has("household")) localStorage.removeItem(HOUSEHOLD_STORAGE_KEY);
 
 let householdId = null;
-let householdName = "";
 let entries = [];
 let active = null;
 let selectedTab = "timer";
@@ -69,7 +68,7 @@ async function boot() {
   if (savedHousehold) {
     try {
       await loadHousehold(savedHousehold);
-      enterHousehold(savedHousehold, householdName);
+      enterHousehold(savedHousehold);
       return;
     } catch {
       localStorage.removeItem(HOUSEHOLD_STORAGE_KEY);
@@ -84,7 +83,7 @@ async function createHousehold() {
   try {
     const household = await api("/households", { method: "POST" });
     await loadHousehold(household.id);
-    enterHousehold(household.id, household.name);
+    enterHousehold(household.id);
   } catch (error) {
     showGate(error.message);
   } finally {
@@ -103,7 +102,7 @@ async function joinHousehold(value, fromLink = false) {
   try {
     await api(`/households/${id}/join`, { method: "POST" });
     await loadHousehold(id);
-    enterHousehold(id, householdName);
+    enterHousehold(id);
   } catch (error) {
     showGate(fromLink ? "That household could not be found." : error.message);
   } finally {
@@ -111,16 +110,14 @@ async function joinHousehold(value, fromLink = false) {
   }
 }
 
-function enterHousehold(id, name = householdName) {
+function enterHousehold(id) {
   householdId = id;
-  householdName = name;
   const url = new URL(window.location.href);
   url.searchParams.delete("reset");
   url.searchParams.set("household", id);
   window.history.replaceState({}, "", url);
   householdGate.classList.add("hidden");
   app.classList.remove("hidden");
-  document.querySelector("#household-meta").textContent = `${householdName} · Household ${id}`;
   render();
 }
 
@@ -141,7 +138,6 @@ function setGateBusy(busy) {
 
 async function loadHousehold(id) {
   const household = await api(`/households/${id}`);
-  householdName = household.name;
   entries = household.entries.map(normalizeEntry).sort((a, b) => b.startedAt - a.startedAt);
 }
 
@@ -517,13 +513,13 @@ async function shareHousehold() {
   const shareUrl = url.toString();
   try {
     if (navigator.share) {
-      await navigator.share({ title: `Join our ${householdName} household`, text: "Use this link to share our Nappy sleep log.", url: shareUrl });
+      await navigator.share({ title: "Join our Nappy household", text: "Use this link to share our Nappy sleep log.", url: shareUrl });
       return;
     }
     await navigator.clipboard.writeText(shareUrl);
     showToast("Household link copied");
   } catch {
-    showToast(shareUrl);
+    showToast("Could not share the household link");
   }
 }
 

@@ -7,20 +7,12 @@ import pg from "pg";
 const { Pool } = pg;
 const port = Number(process.env.PORT || 3000);
 const distDirectory = path.resolve("dist");
-const householdNames = [
-  "Bubbly Bunny", "Cuddly Cat", "Cozy Capybara", "Dreamy Duck", "Drowsy Deer",
-  "Fluffy Fawn", "Fuzzy Fox", "Gentle Gosling", "Happy Hedgehog", "Huggable Hamster",
-  "Jolly Joey", "Little Lamb", "Mellow Mouse", "Peaceful Panda", "Quiet Quokka",
-  "Sleepy Seal", "Snug Squirrel", "Tiny Tiger", "Warm Wombat"
-];
 
 const schema = `
   CREATE TABLE IF NOT EXISTS households (
     id TEXT PRIMARY KEY,
-    name TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
   );
-  ALTER TABLE households ADD COLUMN IF NOT EXISTS name TEXT;
   CREATE TABLE IF NOT EXISTS entries (
     id UUID PRIMARY KEY,
     household_id TEXT NOT NULL REFERENCES households(id) ON DELETE CASCADE,
@@ -58,27 +50,22 @@ async function createStore() {
     async createHousehold() {
       for (;;) {
         const id = createHouseholdId();
-        const name = createHouseholdName();
         try {
-          const result = await pool.query("INSERT INTO households (id, name) VALUES ($1, $2) RETURNING id, name", [id, name]);
-          return { id: result.rows[0].id, name: result.rows[0].name, entries: [] };
+          const result = await pool.query("INSERT INTO households (id) VALUES ($1) RETURNING id", [id]);
+          return { id: result.rows[0].id, entries: [] };
         } catch (error) {
           if (error.code !== "23505") throw error;
         }
       }
     },
     async getHousehold(id) {
-      const household = await pool.query("SELECT id, name FROM households WHERE id = $1", [id]);
+      const household = await pool.query("SELECT id FROM households WHERE id = $1", [id]);
       if (!household.rowCount) return null;
-      const named = await pool.query(
-        "UPDATE households SET name = COALESCE(name, $1) WHERE id = $2 RETURNING id, name",
-        [createHouseholdName(), id]
-      );
       const result = await pool.query(
         "SELECT id, mode, EXTRACT(EPOCH FROM started_at) * 1000 AS started_at, EXTRACT(EPOCH FROM ended_at) * 1000 AS ended_at, duration_seconds FROM entries WHERE household_id = $1 ORDER BY started_at DESC",
         [id]
       );
-      return { id: named.rows[0].id, name: named.rows[0].name, entries: result.rows.map(serializeEntry) };
+      return { id: household.rows[0].id, entries: result.rows.map(serializeEntry) };
     },
     async createEntry(householdId, entry) {
       await assertHousehold(pool, householdId);
@@ -111,13 +98,12 @@ function createMemoryStore() {
     async createHousehold() {
       let id;
       do id = createHouseholdId(); while (households.has(id));
-      const name = createHouseholdName();
-      households.set(id, name);
+      households.set(id, true);
       entries.set(id, []);
-      return { id, name, entries: [] };
+      return { id, entries: [] };
     },
     async getHousehold(id) {
-      return households.has(id) ? { id, name: households.get(id), entries: [...entries.get(id)].sort((a, b) => b.startedAt - a.startedAt) } : null;
+      return households.has(id) ? { id, entries: [...entries.get(id)].sort((a, b) => b.startedAt - a.startedAt) } : null;
     },
     async createEntry(householdId, entry) {
       assertMemoryHousehold(households, householdId);
@@ -171,7 +157,7 @@ async function handleApi(request, response, parts) {
   if (parts.length === 4 && parts[3] === "join" && request.method === "POST") {
     const household = await store.getHousehold(householdId);
     if (!household) sendJson(response, 404, { error: "Household not found" });
-    else sendJson(response, 200, { id: household.id, name: household.name });
+    else sendJson(response, 200, { id: household.id });
     return;
   }
   if (parts.length === 3 && request.method === "GET") {
@@ -257,9 +243,6 @@ function createHouseholdId() {
   return randomBytes(4).toString("hex").toUpperCase();
 }
 
-function createHouseholdName() {
-  return householdNames[Math.floor(Math.random() * householdNames.length)];
-}
 
 function serializeEntry(row) {
   return {
