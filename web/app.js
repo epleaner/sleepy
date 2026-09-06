@@ -1,44 +1,181 @@
-if (import.meta.env.DEV) import("./styles.css");
+import "./styles.css";
 
-const STORAGE_KEY = "nappy.pwa.entries";
+const HOUSEHOLD_STORAGE_KEY = "nappy.household.id";
+const API_ROOT = "/api";
 const WAKE_CUE_SECONDS = 75 * 60;
 const NAP_REMINDER_SECONDS = 105 * 60;
 
-if (new URLSearchParams(window.location.search).has("reset")) {
-  localStorage.removeItem(STORAGE_KEY);
-}
+const params = new URLSearchParams(window.location.search);
+if (params.has("reset") && !params.has("household")) localStorage.removeItem(HOUSEHOLD_STORAGE_KEY);
 
-let entries = loadEntries();
+let householdId = null;
+let entries = [];
 let active = null;
 let selectedTab = "timer";
 let selectedPeriod = "day";
 let notificationTimers = [];
 let editingEntryId = null;
 let toastTimer = null;
+let refreshInFlight = false;
 
+const householdGate = document.querySelector("#household-gate");
+const app = document.querySelector("#app");
+const householdError = document.querySelector("#household-error");
+const householdCode = document.querySelector("#household-code");
 const timerScreen = document.querySelector("#timer-screen");
 const entriesScreen = document.querySelector("#entries-screen");
 const insightsScreen = document.querySelector("#insights-screen");
 const toast = document.querySelector("#toast");
 
+document.querySelector("#create-household").addEventListener("click", createHousehold);
+document.querySelector("#join-form").addEventListener("submit", (event) => {
+  event.preventDefault();
+  joinHousehold(householdCode.value);
+});
+document.querySelector("#share-household").addEventListener("click", shareHousehold);
 document.querySelectorAll(".tab-button").forEach((button) => {
   button.addEventListener("click", () => {
     selectedTab = button.dataset.tab;
     render();
   });
 });
-
 document.querySelector("#edit-form").addEventListener("submit", saveEditedEntry);
 document.querySelector("#cancel-edit").addEventListener("click", closeEditor);
 document.querySelector("#cancel-edit-secondary").addEventListener("click", closeEditor);
-
 document.querySelector("#edit-modal").addEventListener("click", (event) => {
   if (event.target.id === "edit-modal") closeEditor();
 });
 
 setInterval(render, 1000);
-render();
-registerServiceWorker();
+setInterval(() => refreshEntries(true), 5000);
+void boot();
+
+async function boot() {
+  const queryValue = params.get("household");
+  const queryHousehold = normalizeHouseholdId(queryValue || "");
+  if (queryValue && !queryHousehold) {
+    showGate("That household link is invalid. Enter an eight-character household ID.");
+    householdCode.value = queryValue.slice(0, 8).toUpperCase();
+    return;
+  }
+  if (queryHousehold) {
+    householdCode.value = queryHousehold;
+    await joinHousehold(queryHousehold, true);
+    return;
+  }
+
+  const savedHousehold = normalizeHouseholdId(localStorage.getItem(HOUSEHOLD_STORAGE_KEY) || "");
+  if (savedHousehold) {
+    try {
+      await loadHousehold(savedHousehold);
+      enterHousehold(savedHousehold);
+      return;
+    } catch {
+      localStorage.removeItem(HOUSEHOLD_STORAGE_KEY);
+    }
+  }
+  showGate();
+}
+
+async function createHousehold() {
+  setGateBusy(true);
+  clearGateError();
+  try {
+    const household = await api("/households", { method: "POST" });
+    await loadHousehold(household.id);
+    enterHousehold(household.id);
+  } catch (error) {
+    showGate(error.message);
+  } finally {
+    setGateBusy(false);
+  }
+}
+
+async function joinHousehold(value, fromLink = false) {
+  const id = normalizeHouseholdId(value);
+  if (!id) {
+    showGate("Enter the eight-character household ID.");
+    return;
+  }
+  setGateBusy(true);
+  clearGateError();
+  try {
+    await api(`/households/${id}/join`, { method: "POST" });
+    await loadHousehold(id);
+    enterHousehold(id);
+  } catch (error) {
+    showGate(fromLink ? "That household could not be found." : error.message);
+  } finally {
+    setGateBusy(false);
+  }
+}
+
+function enterHousehold(id) {
+  householdId = id;
+  localStorage.setItem(HOUSEHOLD_STORAGE_KEY, id);
+  const url = new URL(window.location.href);
+  url.searchParams.delete("reset");
+  url.searchParams.set("household", id);
+  window.history.replaceState({}, "", url);
+  householdGate.classList.add("hidden");
+  app.classList.remove("hidden");
+  document.querySelector("#household-meta").textContent = `Household ${id}`;
+  render();
+}
+
+function showGate(error = "") {
+  householdGate.classList.remove("hidden");
+  app.classList.add("hidden");
+  householdError.textContent = error;
+}
+
+function clearGateError() {
+  householdError.textContent = "";
+}
+
+function setGateBusy(busy) {
+  document.querySelector("#create-household").disabled = busy;
+  document.querySelector("#join-form button").disabled = busy;
+}
+
+async function loadHousehold(id) {
+  const household = await api(`/households/${id}`);
+  entries = household.entries.map(normalizeEntry).sort((a, b) => b.startedAt - a.startedAt);
+}
+
+async function refreshEntries(silent = false) {
+  if (!householdId || refreshInFlight) return;
+  refreshInFlight = true;
+  try {
+    await loadHousehold(householdId);
+    if (!app.classList.contains("hidden")) render();
+  } catch (error) {
+    if (!silent) showToast(error.message);
+  } finally {
+    refreshInFlight = false;
+  }
+}
+
+async function api(path, options = {}) {
+  let response;
+  try {
+    response = await fetch(`${API_ROOT}${path}`, {
+      cache: "no-store",
+      ...options,
+      headers: { "content-type": "application/json", ...(options.headers || {}) }
+    });
+  } catch {
+    throw new Error("Could not connect to the household service.");
+  }
+  let payload = null;
+  try {
+    payload = await response.json();
+  } catch {
+    // Empty responses, such as DELETE, are valid.
+  }
+  if (!response.ok) throw new Error(payload?.error || `Request failed (${response.status})`);
+  return payload;
+}
 
 function render() {
   document.querySelector("#today-date").textContent = new Intl.DateTimeFormat(undefined, { dateStyle: "long" }).format(new Date());
@@ -84,9 +221,7 @@ function renderTimerScreen() {
     ${todaysEntries.length ? todaysEntries.map(renderHomeEntry).join("") : '<p class="empty-state">No completed windows today.</p>'}
   `;
 
-  document.querySelectorAll("[data-action='start']").forEach((button) => {
-    button.addEventListener("click", () => startMode(button.dataset.mode));
-  });
+  document.querySelectorAll("[data-action='start']").forEach((button) => button.addEventListener("click", () => { void startMode(button.dataset.mode); }));
   document.querySelector("[data-action='pause']")?.addEventListener("click", toggleNapPause);
 }
 
@@ -149,7 +284,6 @@ function renderEntriesScreen() {
     if (!groups.has(key)) groups.set(key, []);
     groups.get(key).push(entry);
   });
-
   mount.innerHTML = `<div class="entries-stack">${[...groups.entries()].map(([day, dayEntries]) => `
     <section class="entry-section panel" aria-labelledby="day-${day}">
       <h2 id="day-${day}">${formatDate(new Date(Number(day)))}</h2>
@@ -157,7 +291,7 @@ function renderEntriesScreen() {
     </section>
   `).join("")}</div>`;
   mount.querySelectorAll("[data-action='edit']").forEach((button) => button.addEventListener("click", () => openEditor(button.dataset.id)));
-  mount.querySelectorAll("[data-action='delete']").forEach((button) => button.addEventListener("click", () => deleteEntry(button.dataset.id)));
+  mount.querySelectorAll("[data-action='delete']").forEach((button) => button.addEventListener("click", () => { void deleteEntry(button.dataset.id); }));
 }
 
 function renderManagedEntry(entry) {
@@ -207,21 +341,22 @@ function renderAverage(title, duration, count, color, icon) {
   </div>`;
 }
 
-function startMode(mode) {
+async function startMode(mode) {
   if (active?.mode === mode) return;
   const now = Date.now();
   if (active) {
-    addEntry(stopActive(now));
+    const completed = stopActive(now);
+    try {
+      await createEntry(completed);
+    } catch (error) {
+      showToast(error.message);
+      return;
+    }
+    active = null;
+    cancelWakeNotifications();
   }
-  active = {
-    mode,
-    startedAt: now,
-    accumulatedSeconds: 0,
-    lastResumedAt: now,
-    isPaused: false
-  };
+  active = { mode, startedAt: now, accumulatedSeconds: 0, lastResumedAt: now, isPaused: false };
   if (mode === "wake") scheduleWakeNotifications(now);
-  else cancelWakeNotifications();
   render();
 }
 
@@ -240,15 +375,7 @@ function toggleNapPause() {
 }
 
 function stopActive(now) {
-  const stopped = {
-    id: crypto.randomUUID(),
-    mode: active.mode,
-    startedAt: active.startedAt,
-    endedAt: now,
-    duration: elapsedSeconds(now)
-  };
-  active = null;
-  return stopped;
+  return { id: crypto.randomUUID(), mode: active.mode, startedAt: active.startedAt, endedAt: now, duration: Math.floor(elapsedSeconds(now)) };
 }
 
 function elapsedSeconds(now = Date.now()) {
@@ -257,9 +384,9 @@ function elapsedSeconds(now = Date.now()) {
   return Math.max(0, active.accumulatedSeconds + (now - active.lastResumedAt) / 1000);
 }
 
-function addEntry(entry) {
-  entries = [entry, ...entries].sort((a, b) => b.startedAt - a.startedAt);
-  saveEntries();
+async function createEntry(entry) {
+  const saved = await api(`/households/${householdId}/entries`, { method: "POST", body: JSON.stringify(entry) });
+  entries = [normalizeEntry(saved), ...entries].sort((a, b) => b.startedAt - a.startedAt);
 }
 
 function dailyTotals(now = new Date()) {
@@ -269,11 +396,8 @@ function dailyTotals(now = new Date()) {
   const wakeStarts = entries
     .filter((entry) => entry.mode === "wake" && entry.startedAt >= cutoff.getTime() && entry.startedAt < nextDay.getTime())
     .map((entry) => entry.startedAt);
-  if (active?.mode === "wake" && active.startedAt >= cutoff.getTime() && active.startedAt < nextDay.getTime()) {
-    wakeStarts.push(active.startedAt);
-  }
+  if (active?.mode === "wake" && active.startedAt >= cutoff.getTime() && active.startedAt < nextDay.getTime()) wakeStarts.push(active.startedAt);
   if (!wakeStarts.length) return { dayStart: null, wakeDuration: null, napDuration: null };
-
   const dayStart = new Date(Math.min(...wakeStarts));
   const relevant = entries.filter((entry) => entry.startedAt >= dayStart.getTime() && entry.startedAt <= now.getTime());
   let wakeDuration = relevant.filter((entry) => entry.mode === "wake").reduce((sum, entry) => sum + entry.duration, 0);
@@ -317,8 +441,7 @@ function scheduleWakeNotifications(startedAt) {
     notificationTimers.push(timer);
   };
   requestNotificationPermission().then((allowed) => {
-    if (!allowed) return;
-    if (active?.mode !== "wake" || active.startedAt !== startedAt) return;
+    if (!allowed || active?.mode !== "wake" || active.startedAt !== startedAt) return;
     schedule(WAKE_CUE_SECONDS - (Date.now() - startedAt) / 1000, "Start looking for sleep cues");
     schedule(NAP_REMINDER_SECONDS - (Date.now() - startedAt) / 1000, "Time for a nap!");
   });
@@ -332,9 +455,7 @@ async function requestNotificationPermission() {
 }
 
 function showNotification(body) {
-  if ("Notification" in window && Notification.permission === "granted") {
-    new Notification("Nappy", { body });
-  }
+  if ("Notification" in window && Notification.permission === "granted") new Notification("Nappy", { body });
   showToast(body);
 }
 
@@ -359,51 +480,58 @@ function closeEditor() {
   document.querySelector("#edit-modal").classList.add("hidden");
 }
 
-function saveEditedEntry(event) {
+async function saveEditedEntry(event) {
   event.preventDefault();
   const entry = entries.find((candidate) => candidate.id === editingEntryId);
   if (!entry) return;
   const startedAt = new Date(document.querySelector("#edit-started").value).getTime();
   const duration = Math.max(0, Number(document.querySelector("#edit-duration").value) || 0) * 60;
   if (!Number.isFinite(startedAt)) return;
-  entry.mode = document.querySelector("#edit-mode").value;
-  entry.startedAt = startedAt;
-  entry.duration = duration;
-  entry.endedAt = startedAt + duration * 1000;
-  entries.sort((a, b) => b.startedAt - a.startedAt);
-  saveEntries();
-  closeEditor();
-  render();
-}
-
-function deleteEntry(id) {
-  entries = entries.filter((entry) => entry.id !== id);
-  saveEntries();
-  render();
-}
-
-function loadEntries() {
+  const updated = { ...entry, mode: document.querySelector("#edit-mode").value, startedAt, duration, endedAt: startedAt + duration * 1000 };
   try {
-    const parsed = JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]");
-    return Array.isArray(parsed) ? parsed : [];
+    const saved = await api(`/households/${householdId}/entries/${entry.id}`, { method: "PUT", body: JSON.stringify(updated) });
+    entries = entries.map((candidate) => candidate.id === entry.id ? normalizeEntry(saved) : candidate).sort((a, b) => b.startedAt - a.startedAt);
+    closeEditor();
+    render();
+  } catch (error) {
+    showToast(error.message);
+  }
+}
+
+async function deleteEntry(id) {
+  try {
+    await api(`/households/${householdId}/entries/${id}`, { method: "DELETE" });
+    entries = entries.filter((entry) => entry.id !== id);
+    render();
+  } catch (error) {
+    showToast(error.message);
+  }
+}
+
+async function shareHousehold() {
+  const url = new URL(window.location.href);
+  url.search = "";
+  url.searchParams.set("household", householdId);
+  const shareUrl = url.toString();
+  try {
+    if (navigator.share) {
+      await navigator.share({ title: "Join our Nappy household", text: "Use this link to share our Nappy sleep log.", url: shareUrl });
+      return;
+    }
+    await navigator.clipboard.writeText(shareUrl);
+    showToast("Household link copied");
   } catch {
-    return [];
+    showToast(shareUrl);
   }
 }
 
-function saveEntries() {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(entries));
+function normalizeEntry(entry) {
+  return { ...entry, startedAt: Number(entry.startedAt), endedAt: Number(entry.endedAt), duration: Number(entry.duration) };
 }
 
-function registerServiceWorker() {
-  if (!("serviceWorker" in navigator)) return;
-  const localDevelopment = location.hostname === "localhost" || location.hostname === "127.0.0.1" || location.hostname.endsWith(".localhost");
-  if (localDevelopment) {
-    navigator.serviceWorker.getRegistrations().then((registrations) => Promise.all(registrations.map((registration) => registration.unregister())));
-    caches.keys().then((keys) => Promise.all(keys.map((key) => caches.delete(key))));
-    return;
-  }
-  navigator.serviceWorker.register("service-worker.js").catch(() => {});
+function normalizeHouseholdId(value) {
+  const id = value.toUpperCase();
+  return /^[A-F0-9]{8}$/.test(id) ? id : null;
 }
 
 function startOfDay(date) {

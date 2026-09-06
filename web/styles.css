@@ -101,3 +101,22 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
   .segment-button { font-size: .7rem; padding-inline: 2px; }
 }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; scroll-behavior: auto !important; } }
+.household-gate { min-height: 100svh; display: grid; place-items: center; padding: 24px; }
+.gate-card { width: min(460px, 100%); padding: 28px; background: var(--panel); border: 1px solid var(--border); border-radius: 24px; box-shadow: 0 18px 60px rgba(0,0,0,.35); }
+.eyebrow { margin: 0 0 12px; color: var(--indigo); font-size: .82rem; letter-spacing: .12em; text-transform: uppercase; }
+.gate-card h1 { margin: 0; font-size: 2.4rem; font-weight: 300; letter-spacing: -.05em; }
+.gate-intro { margin: 14px 0 24px; color: var(--muted); line-height: 1.5; }
+.gate-card > .primary-button { width: 100%; }
+.gate-divider { display: flex; align-items: center; gap: 12px; margin: 22px 0; color: var(--muted); }
+.gate-divider::before, .gate-divider::after { content: ""; height: 1px; flex: 1; background: var(--border); }
+.gate-divider span { font-size: .82rem; }
+.gate-card label { display: block; margin-bottom: 8px; color: var(--muted); font-size: .9rem; }
+.join-row { display: grid; grid-template-columns: 1fr auto; gap: 8px; }
+.join-row input { min-width: 0; min-height: 52px; padding: 12px 14px; border: 1px solid var(--border); border-radius: 12px; background: #2c2c2e; color: #fff; text-transform: uppercase; }
+.join-row .secondary-button { min-height: 52px; }
+.form-error { min-height: 1.2em; margin: 12px 0 0; color: var(--danger); font-size: .88rem; }
+.screen-title-row { display: flex; align-items: center; justify-content: space-between; gap: 14px; }
+.screen-title-row h1 { min-width: 0; }
+.share-button { flex: 0 0 auto; border: 1px solid var(--border); border-radius: 99px; padding: 9px 12px; background: transparent; color: var(--muted); font-size: .78rem; font-weight: 400; }
+.share-button:hover { color: #fff; border-color: #5a5a60; }
+.household-meta { margin: 9px 0 0; color: var(--indigo); font-size: .82rem; letter-spacing: .04em; }

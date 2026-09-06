@@ -13,10 +13,32 @@
   <title>Nappy</title>
 </head>
 <body>
-  <main id="app" class="app-shell">
+  <section id="household-gate" class="household-gate" aria-labelledby="household-title">
+    <div class="gate-card">
+      <p class="eyebrow">Nappy</p>
+      <h1 id="household-title">Your household</h1>
+      <p class="gate-intro">Share one simple sleep log with everyone who helps care for your little one.</p>
+      <button id="create-household" class="primary-button wake" type="button">Start a household</button>
+      <div class="gate-divider"><span>or</span></div>
+      <form id="join-form">
+        <label for="household-code">Join with a household ID</label>
+        <div class="join-row">
+          <input id="household-code" name="household" inputmode="text" autocomplete="off" placeholder="AB12CD34" maxlength="8" required>
+          <button class="secondary-button" type="submit">Join</button>
+        </div>
+      </form>
+      <p id="household-error" class="form-error" role="alert"></p>
+    </div>
+  </section>
+
+  <main id="app" class="app-shell hidden">
     <section id="timer-screen" class="screen" aria-labelledby="app-title">
       <header class="screen-header">
-        <h1 id="app-title">Nappy</h1>
+        <div class="screen-title-row">
+          <h1 id="app-title">Nappy</h1>
+          <button id="share-household" class="share-button" type="button">Share household</button>
+        </div>
+        <p id="household-meta" class="household-meta"></p>
         <p id="today-date" class="muted"></p>
       </header>
       <div id="timer-card-mount"></div>

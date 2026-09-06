@@ -1,13 +1,18 @@
 {
   "name": "nappy-pwa",
   "private": true,
+  "type": "module",
   "scripts": {
-    "dev": "vite web",
-    "build": "vite build web --outDir ../dist",
-    "start": "vite preview --host 0.0.0.0 --port $PORT",
-    "preview": "vite preview --host 0.0.0.0 --outDir dist"
+    "dev": "vite --config vite.config.js web",
+    "api": "node server.js",
+    "build": "vite build --config vite.config.js web --outDir ../dist",
+    "start": "node server.js",
+    "preview": "vite preview --config vite.config.js --host 0.0.0.0 --outDir dist"
   },
   "devDependencies": {
     "vite": "^8.2.2"
+  },
+  "dependencies": {
+    "pg": "^8.23.0"
   }
 }
