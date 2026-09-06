@@ -21,7 +21,7 @@
 
 .ui-icon { display: inline-block; width: 1.15em; height: 1.15em; flex: 0 0 auto; vertical-align: -0.16em; }
 .tab-icon { display: grid; place-items: center; width: 1.35rem; height: 1.35rem; }
-.tab-icon .ui-icon { width: 1.3rem; height: 1.3rem; }
+.tab-icon .ui-icon { width: 1.3rem; height: 1.3rem; font-size: 1.2rem; }
 .primary-button .ui-icon { margin-right: 7px; vertical-align: -0.18em; }
 html, body { margin: 0; min-height: 100%; background: var(--background); }
 body { min-width: 320px; color: var(--ink); font-size: 18px; line-height: 1.5; font-weight: 400; -webkit-font-smoothing: antialiased; }
