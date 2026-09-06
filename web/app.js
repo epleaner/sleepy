@@ -1,26 +1,38 @@
 import "./styles.css";
+import { icon as fontAwesomeIcon } from "@fortawesome/fontawesome-svg-core";
+import {
+  faChartLine,
+  faClock,
+  faCopy,
+  faList,
+  faMoon,
+  faPen,
+  faSliders,
+  faSun,
+  faTrash,
+  faXmark
+} from "@fortawesome/free-solid-svg-icons";
 
 const HOUSEHOLD_STORAGE_KEY = "nappy.household.id";
 const API_ROOT = "/api";
 const WAKE_CUE_SECONDS = 75 * 60;
 const NAP_REMINDER_SECONDS = 105 * 60;
 
-
-const ICON_PATHS = {
-  timer: '<circle cx="12" cy="12" r="8"></circle><path d="M12 8v4l2.5 2.5"></path>',
-  list: '<path d="M8 6h11M8 12h11M8 18h11M4 6h.01M4 12h.01M4 18h.01"></path>',
-  chart: '<path d="M4 19V5M4 19h16M7 16l3-4 3 2 4-6"></path>',
-  settings: '<path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h10M18 18h2"></path><circle cx="16" cy="6" r="2"></circle><circle cx="10" cy="12" r="2"></circle><circle cx="16" cy="18" r="2"></circle>',
-  sun: '<circle cx="12" cy="12" r="3.5"></circle><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"></path>',
-  moon: '<path d="M20.5 15.5A8.5 8.5 0 0 1 8.5 3.5 8.5 8.5 0 1 0 20.5 15.5z"></path>',
-  edit: '<path d="M4 20h4L19 9a2.12 2.12 0 0 0-3-3L5 17v3zM14.5 7.5l2 2"></path>',
-  trash: '<path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"></path>',
-  close: '<path d="M6 6l12 12M18 6L6 18"></path>',
-  copy: '<rect x="8" y="8" width="12" height="12" rx="2"></rect><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"></path>'
+const ICONS = {
+  timer: faClock,
+  list: faList,
+  chart: faChartLine,
+  settings: faSliders,
+  sun: faSun,
+  moon: faMoon,
+  edit: faPen,
+  trash: faTrash,
+  close: faXmark,
+  copy: faCopy
 };
 
 function icon(name) {
-  return `<svg class="ui-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICON_PATHS[name]}</svg>`;
+  return fontAwesomeIcon(ICONS[name], { classes: ["ui-icon"], attributes: { "aria-hidden": "true" } }).html.join("");
 }
 
 document.querySelectorAll("[data-icon]").forEach((node) => {
