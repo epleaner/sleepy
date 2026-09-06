@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#000000">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black">
+  <meta name="apple-mobile-web-app-title" content="Nappy">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="apple-touch-icon" href="icon.svg">
+  <link rel="stylesheet" href="styles.css">
+  <title>Nappy</title>
+</head>
+<body>
+  <main id="app" class="app-shell">
+    <section id="timer-screen" class="screen" aria-labelledby="app-title">
+      <header class="screen-header">
+        <h1 id="app-title">Nappy</h1>
+        <p id="today-date" class="muted"></p>
+      </header>
+      <div id="timer-card-mount"></div>
+      <section id="daily-totals" class="panel" aria-labelledby="totals-title"></section>
+      <section id="mode-controls" aria-label="Timer controls"></section>
+      <section id="today-entries" class="panel" aria-labelledby="entries-title"></section>
+    </section>
+
+    <section id="entries-screen" class="screen hidden" aria-labelledby="entries-screen-title">
+      <header class="screen-header compact-header">
+        <h1 id="entries-screen-title">Entries</h1>
+      </header>
+      <div id="entries-list"></div>
+    </section>
+
+    <section id="insights-screen" class="screen hidden" aria-labelledby="insights-screen-title">
+      <header class="screen-header compact-header">
+        <h1 id="insights-screen-title">Insights</h1>
+      </header>
+      <div id="insights-content"></div>
+    </section>
+
+    <nav class="tab-bar" aria-label="Primary navigation">
+      <button class="tab-button active" data-tab="timer" aria-label="Timer" aria-selected="true">
+        <span class="tab-icon" aria-hidden="true">◴</span><span>Timer</span>
+      </button>
+      <button class="tab-button" data-tab="entries" aria-label="Entries" aria-selected="false">
+        <span class="tab-icon" aria-hidden="true">☷</span><span>Entries</span>
+      </button>
+      <button class="tab-button" data-tab="insights" aria-label="Insights" aria-selected="false">
+        <span class="tab-icon" aria-hidden="true">▥</span><span>Insights</span>
+      </button>
+    </nav>
+  </main>
+
+  <div id="edit-modal" class="modal-backdrop hidden" role="presentation">
+    <form id="edit-form" class="modal" aria-labelledby="edit-title">
+      <div class="modal-header">
+        <h2 id="edit-title">Edit entry</h2>
+        <button id="cancel-edit" class="icon-button" type="button" aria-label="Cancel edit">×</button>
+      </div>
+      <label>Type
+        <select id="edit-mode" name="mode">
+          <option value="wake">Wake</option>
+          <option value="nap">Sleep</option>
+        </select>
+      </label>
+      <label>Started
+        <input id="edit-started" name="startedAt" type="datetime-local" required>
+      </label>
+      <label>Duration in minutes
+        <input id="edit-duration" name="duration" type="number" min="0" step="1" required>
+      </label>
+      <div class="modal-actions">
+        <button id="cancel-edit-secondary" class="secondary-button" type="button">Cancel</button>
+        <button class="primary-button" type="submit">Save</button>
+      </div>
+    </form>
+  </div>
+
+  <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
+  <script src="app.js"></script>
+</body>
+</html>
