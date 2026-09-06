@@ -16,6 +16,7 @@ struct ContentView: View {
                 .accessibilityIdentifier("Insights tab")
         }
         .tint(.indigo)
+        .preferredColorScheme(.dark)
     }
 }
 
