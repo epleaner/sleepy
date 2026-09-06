@@ -37,6 +37,7 @@ let timerRevision = 0;
 let serverClockOffset = 0;
 let timerMutationInFlight = false;
 let householdDeletionInFlight = false;
+let deferredInstallPrompt = null;
 let selectedTab = "timer";
 let selectedPeriod = "day";
 let notificationTimers = [];
@@ -62,8 +63,11 @@ document.querySelector("#share-household").addEventListener("click", shareHouseh
 document.querySelector("#add-entry").addEventListener("click", openNewEntry);
 document.querySelector("#settings-content").addEventListener("click", (event) => {
   if (event.target.closest("[data-action='copy-household']")) void copyHouseholdId();
+  if (event.target.closest("[data-action='install-app']")) void installApp();
   if (event.target.closest("[data-action='delete-household']")) void deleteHousehold();
 });
+window.addEventListener("beforeinstallprompt", handleBeforeInstallPrompt);
+window.addEventListener("appinstalled", handleAppInstalled);
 document.querySelectorAll(".tab-button").forEach((button) => {
   button.addEventListener("click", () => {
     selectedTab = button.dataset.tab;
@@ -420,13 +424,64 @@ function renderSettingsScreen() {
           ${icon("copy")}
         </button>
       </section>
+      ${renderInstallPanel()}
       <section class="panel danger-panel" aria-labelledby="delete-household-title">
         <h2 id="delete-household-title" class="panel-title">Delete household</h2>
         <p class="settings-copy">This permanently deletes the household, its completed entries, and any active timer.</p>
         <button class="danger-button" data-action="delete-household" type="button" ${householdDeletionInFlight ? "disabled" : ""}>Delete household</button>
       </section>
-    </div>
   `;
+}
+
+function renderInstallPanel() {
+  if (isStandalone()) return "";
+  if (deferredInstallPrompt) {
+    return `<section class="panel install-panel" aria-labelledby="install-title">
+      <h2 id="install-title" class="panel-title">Install</h2>
+      <button class="secondary-button install-button" data-action="install-app" type="button">Install Nappy as App</button>
+    </section>`;
+  }
+  if (isIosDevice()) {
+    return `<section class="panel install-panel" aria-labelledby="install-title">
+      <h2 id="install-title" class="panel-title">Install</h2>
+      <p class="install-instructions">Use Share, then Add to Home Screen.</p>
+    </section>`;
+  }
+  return "";
+}
+
+function handleBeforeInstallPrompt(event) {
+  if (isStandalone()) return;
+  event.preventDefault();
+  deferredInstallPrompt = event;
+  render();
+}
+
+async function installApp() {
+  if (!deferredInstallPrompt) return;
+  const prompt = deferredInstallPrompt;
+  deferredInstallPrompt = null;
+  try {
+    await prompt.prompt();
+    await prompt.userChoice;
+  } catch {
+    showToast("Could not install Nappy");
+  } finally {
+    render();
+  }
+}
+
+function handleAppInstalled() {
+  deferredInstallPrompt = null;
+  render();
+}
+
+function isStandalone() {
+  return window.matchMedia("(display-mode: standalone)").matches || window.navigator.standalone === true;
+}
+
+function isIosDevice() {
+  return /iphone|ipad|ipod/i.test(window.navigator.userAgent) || (window.navigator.platform === "MacIntel" && window.navigator.maxTouchPoints > 1);
 }
 
 function renderAverage(title, duration, count, color, iconName) {

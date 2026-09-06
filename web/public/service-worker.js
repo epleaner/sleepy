@@ -1,4 +1,4 @@
-const CACHE_NAME = "nappy-pwa-v18";
+const CACHE_NAME = "nappy-pwa-v19";
 const APP_SHELL = ["./", "./index.html"];
 
 self.addEventListener("install", (event) => {

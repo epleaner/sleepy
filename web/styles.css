@@ -45,6 +45,8 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px s
 
 .settings-stack { display: grid; gap: 20px; }
 .settings-copy { margin: 0 0 16px; color: var(--muted); font-size: .95rem; }
+.install-button { width: 100%; }
+.install-instructions { margin: 0; color: var(--muted); font-size: .95rem; }
 .copy-id-button { display: flex; align-items: center; justify-content: space-between; width: 100%; min-height: 54px; gap: 16px; border: 1px solid var(--border); border-radius: 3px; padding: 8px 14px; background: var(--panel-soft); color: var(--accent); text-align: left; }
 .copy-id-button:hover { border-color: var(--accent); }
 .household-id { overflow-wrap: anywhere; font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; font-size: .95rem; letter-spacing: .08em; }
