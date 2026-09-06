@@ -11,6 +11,9 @@ if (params.has("reset") && !params.has("household")) localStorage.removeItem(HOU
 let householdId = null;
 let entries = [];
 let active = null;
+let timerRevision = 0;
+let serverClockOffset = 0;
+let timerMutationInFlight = false;
 let selectedTab = "timer";
 let selectedPeriod = "day";
 let notificationTimers = [];
@@ -47,7 +50,7 @@ document.querySelector("#edit-modal").addEventListener("click", (event) => {
 });
 
 setInterval(render, 1000);
-setInterval(() => refreshEntries(true), 5000);
+setInterval(() => refreshEntries(true), 2000);
 void boot();
 
 async function boot() {
@@ -112,6 +115,7 @@ async function joinHousehold(value, fromLink = false) {
 
 function enterHousehold(id) {
   householdId = id;
+  localStorage.setItem(HOUSEHOLD_STORAGE_KEY, id);
   const url = new URL(window.location.href);
   url.searchParams.delete("reset");
   url.searchParams.set("household", id);
@@ -139,6 +143,50 @@ function setGateBusy(busy) {
 async function loadHousehold(id) {
   const household = await api(`/households/${id}`);
   entries = household.entries.map(normalizeEntry).sort((a, b) => b.startedAt - a.startedAt);
+  applyTimerState(household);
+}
+
+function applyTimerState(state, requestNotifications = false) {
+  const nextRevision = Number(state.timerRevision || 0);
+  if (nextRevision < timerRevision) return;
+  const previous = active;
+  timerRevision = nextRevision;
+  if (!state.activeTimer) {
+    active = null;
+    if (previous) cancelWakeNotifications();
+    return;
+  }
+  const next = normalizeTimer(state.activeTimer);
+  const changed = !previous
+    || previous.mode !== next.mode
+    || previous.startedAt !== next.startedAt
+    || previous.accumulatedSeconds !== next.accumulatedSeconds
+    || previous.lastResumedAt !== next.lastResumedAt
+    || previous.isPaused !== next.isPaused;
+  serverClockOffset = next.serverNow - Date.now();
+  active = next;
+  if (changed) {
+    cancelWakeNotifications();
+    if (active.mode === "wake") scheduleWakeNotifications(active.startedAt, requestNotifications);
+  }
+}
+
+async function mutateTimer(action, mode = null, requestNotifications = false) {
+  if (!householdId || timerMutationInFlight) return;
+  timerMutationInFlight = true;
+  try {
+    const state = await api(`/households/${householdId}/timer`, {
+      method: "POST",
+      body: JSON.stringify({ action, ...(mode ? { mode } : {}) })
+    });
+    if (state.entry) entries = [normalizeEntry(state.entry), ...entries].sort((a, b) => b.startedAt - a.startedAt);
+    applyTimerState(state, requestNotifications);
+    render();
+  } catch (error) {
+    showToast(error.message);
+  } finally {
+    timerMutationInFlight = false;
+  }
 }
 
 async function refreshEntries(silent = false) {
@@ -220,7 +268,8 @@ function renderTimerScreen() {
   `;
 
   document.querySelectorAll("[data-action='start']").forEach((button) => button.addEventListener("click", () => { void startMode(button.dataset.mode); }));
-  document.querySelector("[data-action='pause']")?.addEventListener("click", toggleNapPause);
+  document.querySelector("[data-action='pause']")?.addEventListener("click", () => { void toggleNapPause(); });
+  document.querySelector("[data-action='stop']")?.addEventListener("click", () => { void stopTimer(); });
 }
 
 function renderActiveTimer() {
@@ -232,21 +281,24 @@ function renderActiveTimer() {
       ? '<p class="cue-note" role="status">Look for sleep cues</p>'
       : "";
   const pauseButton = active.mode === "nap"
-    ? `<button class="primary-button pause-button" data-action="pause" type="button">${active.isPaused ? "Resume nap" : "Pause nap"}</button>`
+    ? `<button class="primary-button pause-button" data-action="pause" type="button" ${timerMutationInFlight ? "disabled" : ""}>${active.isPaused ? "Resume nap" : "Pause nap"}</button>`
     : "";
   return `
     <section class="timer-card" aria-label="${active.mode === "nap" ? "Nap" : "Wake window"} timer">
       <div class="timer-kind ${active.mode}">${active.mode === "nap" ? "☾ Nap" : "☀ Wake window"}</div>
       <div class="timer-value" aria-live="off">${timerText(elapsed)}</div>
       ${status}
-      ${pauseButton}
+      <div class="timer-actions">
+        ${pauseButton}
+        <button class="secondary-button" data-action="stop" type="button" ${timerMutationInFlight ? "disabled" : ""}>Stop timer</button>
+      </div>
     </section>
   `;
 }
 
 function renderModeButton(mode) {
   const isActive = active?.mode === mode;
-  return `<button class="primary-button ${mode}" data-action="start" data-mode="${mode}" type="button" aria-label="${mode === "wake" ? "Start wake timer" : "Start nap timer"}" ${isActive ? "disabled" : ""}>
+  return `<button class="primary-button ${mode}" data-action="start" data-mode="${mode}" type="button" aria-label="${mode === "wake" ? "Start wake timer" : "Start nap timer"}" ${isActive || timerMutationInFlight ? "disabled" : ""}>
     ${mode === "wake" ? "☀ Start wake" : "☾ Start nap"}
   </button>`;
 }
@@ -340,51 +392,28 @@ function renderAverage(title, duration, count, color, icon) {
 }
 
 async function startMode(mode) {
-  if (active?.mode === mode) return;
-  const now = Date.now();
-  if (active) {
-    const completed = stopActive(now);
-    try {
-      await createEntry(completed);
-    } catch (error) {
-      showToast(error.message);
-      return;
-    }
-    active = null;
-    cancelWakeNotifications();
-  }
-  active = { mode, startedAt: now, accumulatedSeconds: 0, lastResumedAt: now, isPaused: false };
-  if (mode === "wake") scheduleWakeNotifications(now);
-  render();
+  if (active?.mode === mode || timerMutationInFlight) return;
+  await mutateTimer("start", mode, true);
 }
 
-function toggleNapPause() {
-  if (!active || active.mode !== "nap") return;
-  const now = Date.now();
-  if (active.isPaused) {
-    active.isPaused = false;
-    active.lastResumedAt = now;
-  } else {
-    active.accumulatedSeconds = elapsedSeconds(now);
-    active.isPaused = true;
-    active.lastResumedAt = null;
-  }
-  render();
+async function toggleNapPause() {
+  if (!active || active.mode !== "nap" || timerMutationInFlight) return;
+  await mutateTimer(active.isPaused ? "resume" : "pause");
 }
 
-function stopActive(now) {
-  return { id: crypto.randomUUID(), mode: active.mode, startedAt: active.startedAt, endedAt: now, duration: Math.floor(elapsedSeconds(now)) };
+async function stopTimer() {
+  if (!active || timerMutationInFlight) return;
+  await mutateTimer("stop");
 }
 
-function elapsedSeconds(now = Date.now()) {
+function elapsedSeconds(now = nowMs()) {
   if (!active) return 0;
   if (active.isPaused || active.lastResumedAt === null) return active.accumulatedSeconds;
   return Math.max(0, active.accumulatedSeconds + (now - active.lastResumedAt) / 1000);
 }
 
-async function createEntry(entry) {
-  const saved = await api(`/households/${householdId}/entries`, { method: "POST", body: JSON.stringify(entry) });
-  entries = [normalizeEntry(saved), ...entries].sort((a, b) => b.startedAt - a.startedAt);
+function nowMs() {
+  return Date.now() + serverClockOffset;
 }
 
 function dailyTotals(now = new Date()) {
@@ -401,8 +430,8 @@ function dailyTotals(now = new Date()) {
   let wakeDuration = relevant.filter((entry) => entry.mode === "wake").reduce((sum, entry) => sum + entry.duration, 0);
   let napDuration = relevant.filter((entry) => entry.mode === "nap").reduce((sum, entry) => sum + entry.duration, 0);
   if (active?.startedAt >= dayStart.getTime() && active.startedAt <= now.getTime()) {
-    if (active.mode === "wake") wakeDuration += elapsedSeconds(now.getTime());
-    if (active.mode === "nap") napDuration += elapsedSeconds(now.getTime());
+    if (active.mode === "wake") wakeDuration += elapsedSeconds(now.getTime() + serverClockOffset);
+    if (active.mode === "nap") napDuration += elapsedSeconds(now.getTime() + serverClockOffset);
   }
   return { dayStart, wakeDuration, napDuration };
 }
@@ -432,16 +461,19 @@ function periodInterval(period, now) {
   return null;
 }
 
-function scheduleWakeNotifications(startedAt) {
+function scheduleWakeNotifications(startedAt, requestPermission = false) {
   cancelWakeNotifications();
   const schedule = (delay, body) => {
     const timer = window.setTimeout(() => showNotification(body), Math.max(1000, delay * 1000));
     notificationTimers.push(timer);
   };
-  requestNotificationPermission().then((allowed) => {
+  const permission = requestPermission
+    ? requestNotificationPermission()
+    : Promise.resolve("Notification" in window && Notification.permission === "granted");
+  permission.then((allowed) => {
     if (!allowed || active?.mode !== "wake" || active.startedAt !== startedAt) return;
-    schedule(WAKE_CUE_SECONDS - (Date.now() - startedAt) / 1000, "Start looking for sleep cues");
-    schedule(NAP_REMINDER_SECONDS - (Date.now() - startedAt) / 1000, "Time for a nap!");
+    schedule(WAKE_CUE_SECONDS - (nowMs() - startedAt) / 1000, "Start looking for sleep cues");
+    schedule(NAP_REMINDER_SECONDS - (nowMs() - startedAt) / 1000, "Time for a nap!");
   });
 }
 
@@ -525,6 +557,16 @@ async function shareHousehold() {
 
 function normalizeEntry(entry) {
   return { ...entry, startedAt: Number(entry.startedAt), endedAt: Number(entry.endedAt), duration: Number(entry.duration) };
+}
+function normalizeTimer(timer) {
+  return {
+    mode: timer.mode,
+    startedAt: Number(timer.startedAt),
+    accumulatedSeconds: Number(timer.accumulatedSeconds),
+    lastResumedAt: timer.lastResumedAt === null ? null : Number(timer.lastResumedAt),
+    isPaused: Boolean(timer.isPaused),
+    serverNow: Number(timer.serverNow)
+  };
 }
 
 function normalizeHouseholdId(value) {

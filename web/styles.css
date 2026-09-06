@@ -60,7 +60,8 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px s
 .primary-button.wake { background: #8b6f47; }
 .primary-button.nap { background: #4a548a; }
 .secondary-button { border: 1px solid var(--border); background: transparent; color: var(--muted); }
-.pause-button { display: inline-flex; margin-top: 18px; background: #4a548a; }
+.timer-actions { display: flex; justify-content: center; flex-wrap: wrap; gap: 10px; margin-top: 18px; }
+.pause-button { display: inline-flex; margin-top: 0; background: #4a548a; }
 
 .entries-stack { display: grid; gap: 20px; }
 .entry-section h2 { margin: 0 0 10px; color: var(--muted); font-size: 1rem; font-weight: 400; }

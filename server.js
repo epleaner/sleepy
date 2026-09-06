@@ -11,7 +11,18 @@ const distDirectory = path.resolve("dist");
 const schema = `
   CREATE TABLE IF NOT EXISTS households (
     id TEXT PRIMARY KEY,
+    timer_revision BIGINT NOT NULL DEFAULT 0,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  );
+  ALTER TABLE households ADD COLUMN IF NOT EXISTS timer_revision BIGINT NOT NULL DEFAULT 0;
+  CREATE TABLE IF NOT EXISTS active_timers (
+    household_id TEXT PRIMARY KEY REFERENCES households(id) ON DELETE CASCADE,
+    mode TEXT NOT NULL CHECK (mode IN ('wake', 'nap')),
+    started_at TIMESTAMPTZ NOT NULL,
+    accumulated_seconds INTEGER NOT NULL DEFAULT 0 CHECK (accumulated_seconds >= 0),
+    last_resumed_at TIMESTAMPTZ,
+    is_paused BOOLEAN NOT NULL DEFAULT FALSE,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
   );
   CREATE TABLE IF NOT EXISTS entries (
     id UUID PRIMARY KEY,
@@ -59,13 +70,72 @@ async function createStore() {
       }
     },
     async getHousehold(id) {
-      const household = await pool.query("SELECT id FROM households WHERE id = $1", [id]);
+      const household = await pool.query(
+        `SELECT h.id, h.timer_revision, EXTRACT(EPOCH FROM NOW()) * 1000 AS server_now,
+                t.mode, EXTRACT(EPOCH FROM t.started_at) * 1000 AS started_at,
+                t.accumulated_seconds, EXTRACT(EPOCH FROM t.last_resumed_at) * 1000 AS last_resumed_at,
+                t.is_paused
+         FROM households h
+         LEFT JOIN active_timers t ON t.household_id = h.id
+         WHERE h.id = $1`,
+        [id]
+      );
       if (!household.rowCount) return null;
+      const row = household.rows[0];
       const result = await pool.query(
         "SELECT id, mode, EXTRACT(EPOCH FROM started_at) * 1000 AS started_at, EXTRACT(EPOCH FROM ended_at) * 1000 AS ended_at, duration_seconds FROM entries WHERE household_id = $1 ORDER BY started_at DESC",
         [id]
       );
-      return { id: household.rows[0].id, entries: result.rows.map(serializeEntry) };
+      return {
+        id: row.id,
+        timerRevision: Number(row.timer_revision),
+        activeTimer: serializeTimer(row, Number(row.server_now)),
+        entries: result.rows.map(serializeEntry)
+      };
+    },
+    async mutateTimer(householdId, action, mode) {
+      return withTransaction(pool, async (client) => {
+        const household = await client.query("SELECT id, timer_revision FROM households WHERE id = $1 FOR UPDATE", [householdId]);
+        if (!household.rowCount) throw httpError(404, "Household not found");
+        const currentResult = await client.query(
+          "SELECT mode, started_at, accumulated_seconds, last_resumed_at, is_paused FROM active_timers WHERE household_id = $1 FOR UPDATE",
+          [householdId]
+        );
+        const current = currentResult.rows[0] || null;
+        const revision = Number(household.rows[0].timer_revision);
+        if (action === "start" && current?.mode === mode) {
+          const state = await readActiveTimer(client, householdId);
+          return { timerRevision: revision, activeTimer: serializeTimer(state, Number(state.server_now)), entry: null };
+        }
+        if ((action === "pause" || action === "resume") && !current) throw httpError(409, "No active timer");
+        if (action === "stop" && !current) return { timerRevision: revision, activeTimer: null, entry: null };
+
+        let entry = null;
+        if (current && (action === "stop" || (action === "start" && current.mode !== mode))) {
+          entry = await completeActiveTimer(client, householdId);
+          await client.query("DELETE FROM active_timers WHERE household_id = $1", [householdId]);
+        }
+        if (action === "start") {
+          await client.query(
+            "INSERT INTO active_timers (household_id, mode, started_at, accumulated_seconds, last_resumed_at, is_paused) VALUES ($1, $2, NOW(), 0, NOW(), FALSE)",
+            [householdId, mode]
+          );
+        } else if (action === "pause") {
+          await client.query(
+            "UPDATE active_timers SET accumulated_seconds = FLOOR(accumulated_seconds + CASE WHEN is_paused OR last_resumed_at IS NULL THEN 0 ELSE EXTRACT(EPOCH FROM (NOW() - last_resumed_at)) END)::integer, last_resumed_at = NULL, is_paused = TRUE, updated_at = NOW() WHERE household_id = $1",
+            [householdId]
+          );
+        } else if (action === "resume") {
+          await client.query("UPDATE active_timers SET last_resumed_at = NOW(), is_paused = FALSE, updated_at = NOW() WHERE household_id = $1", [householdId]);
+        }
+        const revisionResult = await client.query("UPDATE households SET timer_revision = timer_revision + 1 WHERE id = $1 RETURNING timer_revision", [householdId]);
+        const state = await readActiveTimer(client, householdId);
+        return {
+          timerRevision: Number(revisionResult.rows[0].timer_revision),
+          activeTimer: state ? serializeTimer(state, Number(state.server_now)) : null,
+          entry
+        };
+      });
     },
     async createEntry(householdId, entry) {
       await assertHousehold(pool, householdId);
@@ -94,16 +164,55 @@ async function createStore() {
 function createMemoryStore() {
   const households = new Map();
   const entries = new Map();
+  const timers = new Map();
+  const timerRevisions = new Map();
   return {
     async createHousehold() {
       let id;
       do id = createHouseholdId(); while (households.has(id));
       households.set(id, true);
       entries.set(id, []);
-      return { id, entries: [] };
+      timerRevisions.set(id, 0);
+      return { id, timerRevision: 0, activeTimer: null, entries: [] };
     },
     async getHousehold(id) {
-      return households.has(id) ? { id, entries: [...entries.get(id)].sort((a, b) => b.startedAt - a.startedAt) } : null;
+      if (!households.has(id)) return null;
+      return {
+        id,
+        timerRevision: timerRevisions.get(id),
+        activeTimer: timers.has(id) ? serializeTimer(timers.get(id)) : null,
+        entries: [...entries.get(id)].sort((a, b) => b.startedAt - a.startedAt)
+      };
+    },
+    async mutateTimer(householdId, action, mode) {
+      assertMemoryHousehold(households, householdId);
+      const current = timers.get(householdId) || null;
+      const revision = timerRevisions.get(householdId);
+      if (action === "start" && current?.mode === mode) {
+        return { timerRevision: revision, activeTimer: serializeTimer(current), entry: null };
+      }
+      if ((action === "pause" || action === "resume") && !current) throw httpError(409, "No active timer");
+      if (action === "stop" && !current) return { timerRevision: revision, activeTimer: null, entry: null };
+
+      let entry = null;
+      if (current && (action === "stop" || (action === "start" && current.mode !== mode))) {
+        entry = completeMemoryTimer(entries.get(householdId), current);
+        timers.delete(householdId);
+      }
+      if (action === "start") {
+        const now = Date.now();
+        timers.set(householdId, { mode, startedAt: now, accumulatedSeconds: 0, lastResumedAt: now, isPaused: false });
+      } else if (action === "pause") {
+        current.accumulatedSeconds = timerElapsedSeconds(current, Date.now());
+        current.lastResumedAt = null;
+        current.isPaused = true;
+      } else if (action === "resume") {
+        current.lastResumedAt = Date.now();
+        current.isPaused = false;
+      }
+      const nextRevision = revision + 1;
+      timerRevisions.set(householdId, nextRevision);
+      return { timerRevision: nextRevision, activeTimer: timers.has(householdId) ? serializeTimer(timers.get(householdId)) : null, entry };
     },
     async createEntry(householdId, entry) {
       assertMemoryHousehold(households, householdId);
@@ -158,6 +267,11 @@ async function handleApi(request, response, parts) {
     const household = await store.getHousehold(householdId);
     if (!household) sendJson(response, 404, { error: "Household not found" });
     else sendJson(response, 200, { id: household.id });
+    return;
+  }
+  if (parts.length === 4 && parts[3] === "timer" && request.method === "POST") {
+    const { action, mode } = parseTimerAction(await readJson(request));
+    sendJson(response, 200, await store.mutateTimer(householdId, action, mode));
     return;
   }
   if (parts.length === 3 && request.method === "GET") {
@@ -220,6 +334,80 @@ function parseEntry(payload, id = payload?.id || randomUUID()) {
   if (!Number.isFinite(startedAt) || !Number.isFinite(endedAt) || !Number.isInteger(duration) || duration < 0) throw httpError(400, "Entry timestamps and duration are invalid");
   return { id, mode: payload.mode, startedAt, endedAt, duration };
 }
+function parseTimerAction(payload) {
+  const action = payload?.action;
+  if (!["start", "pause", "resume", "stop"].includes(action)) throw httpError(400, "Timer action is invalid");
+  if (action === "start" && !["wake", "nap"].includes(payload.mode)) throw httpError(400, "Timer mode must be wake or nap");
+  return { action, mode: payload.mode };
+}
+
+async function withTransaction(pool, callback) {
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const result = await callback(client);
+    await client.query("COMMIT");
+    return result;
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+async function readActiveTimer(client, householdId) {
+  const result = await client.query(
+    `SELECT mode, EXTRACT(EPOCH FROM started_at) * 1000 AS started_at,
+            accumulated_seconds, EXTRACT(EPOCH FROM last_resumed_at) * 1000 AS last_resumed_at,
+            is_paused, EXTRACT(EPOCH FROM NOW()) * 1000 AS server_now
+     FROM active_timers WHERE household_id = $1`,
+    [householdId]
+  );
+  return result.rows[0] || null;
+}
+
+async function completeActiveTimer(client, householdId) {
+  const result = await client.query(
+    `INSERT INTO entries (id, household_id, mode, started_at, ended_at, duration_seconds)
+     SELECT $1, $2, mode, started_at, NOW(),
+            FLOOR(accumulated_seconds + CASE WHEN is_paused OR last_resumed_at IS NULL
+              THEN 0 ELSE EXTRACT(EPOCH FROM (NOW() - last_resumed_at)) END)::integer
+     FROM active_timers WHERE household_id = $3
+     RETURNING id, mode, EXTRACT(EPOCH FROM started_at) * 1000 AS started_at,
+               EXTRACT(EPOCH FROM ended_at) * 1000 AS ended_at, duration_seconds`,
+    [randomUUID(), householdId, householdId]
+  );
+  return serializeEntry(result.rows[0]);
+}
+
+function serializeTimer(row, serverNow = Date.now()) {
+  if (!row?.mode) return null;
+  const lastResumedAt = row.last_resumed_at ?? row.lastResumedAt;
+  return {
+    mode: row.mode,
+    startedAt: Number(row.started_at ?? row.startedAt),
+    accumulatedSeconds: Number(row.accumulated_seconds ?? row.accumulatedSeconds),
+    lastResumedAt: lastResumedAt === null || lastResumedAt === undefined ? null : Number(lastResumedAt),
+    isPaused: Boolean(row.is_paused ?? row.isPaused),
+    serverNow: Number(serverNow)
+  };
+}
+
+function timerElapsedSeconds(timer, now) {
+  const resumedAt = timer.last_resumed_at ?? timer.lastResumedAt;
+  const isPaused = timer.is_paused ?? timer.isPaused;
+  const accumulated = Number(timer.accumulated_seconds ?? timer.accumulatedSeconds);
+  return Math.max(0, Math.floor(accumulated + (!isPaused && resumedAt !== null && resumedAt !== undefined ? (now - Number(resumedAt)) / 1000 : 0)));
+}
+
+function completeMemoryTimer(householdEntries, timer) {
+  const endedAt = Date.now();
+  const entry = { id: randomUUID(), mode: timer.mode, startedAt: timer.startedAt, endedAt, duration: timerElapsedSeconds(timer, endedAt) };
+  householdEntries.push(entry);
+  return entry;
+}
+
 
 async function readJson(request) {
   let body = "";
