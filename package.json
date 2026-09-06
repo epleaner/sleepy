@@ -4,6 +4,7 @@
   "scripts": {
     "dev": "vite web",
     "build": "vite build web --outDir ../dist",
+    "start": "vite preview --host 0.0.0.0 --port $PORT",
     "preview": "vite preview --host 0.0.0.0 --outDir dist"
   },
   "devDependencies": {
