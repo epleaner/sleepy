@@ -158,7 +158,8 @@ function enterHousehold(id) {
   householdId = id;
   localStorage.setItem(HOUSEHOLD_STORAGE_KEY, id);
   const url = new URL(window.location.href);
-  url.searchParams.delete("reset");
+  url.pathname = "/";
+  url.search = "";
   url.searchParams.set("household", id);
   window.history.replaceState({}, "", url);
   householdGate.classList.add("hidden");
@@ -665,6 +666,7 @@ async function deleteEntry(id) {
 
 async function shareHousehold() {
   const url = new URL(window.location.href);
+  url.pathname = "/";
   url.search = "";
   url.searchParams.set("household", householdId);
   const shareUrl = url.toString();
