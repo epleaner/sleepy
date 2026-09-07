@@ -7,6 +7,6 @@ export default defineConfig({
     }
   },
   preview: {
-    allowedHosts: ["nappy-production.up.railway.app"]
+    allowedHosts: ["sleepy.elipleaner.com"]
   }
 });

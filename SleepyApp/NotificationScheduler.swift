@@ -9,8 +9,8 @@ final class NotificationScheduler: NSObject, @preconcurrency UNUserNotificationC
     private var wakeSessionID: UUID?
 
     private enum Identifier {
-        static let cue = "nappy.wake.cue"
-        static let nap = "nappy.wake.nap"
+        static let cue = "sleepy.wake.cue"
+        static let nap = "sleepy.wake.nap"
     }
 
     private override init() {
@@ -63,12 +63,12 @@ final class NotificationScheduler: NSObject, @preconcurrency UNUserNotificationC
 
     private func scheduleWakeNotifications(startedAt: Date) {
         let cue = UNMutableNotificationContent()
-        cue.title = "Nappy"
+        cue.title = "Sleepy"
         cue.body = "Start looking for sleep cues"
         cue.sound = .default
 
         let nap = UNMutableNotificationContent()
-        nap.title = "Nappy"
+        nap.title = "Sleepy"
         nap.body = "Time for a nap!"
         nap.sound = .default
 

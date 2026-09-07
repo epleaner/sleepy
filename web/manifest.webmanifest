@@ -1,6 +1,6 @@
 {
-  "name": "Nappy",
-  "short_name": "Nappy",
+  "name": "Sleepy",
+  "short_name": "Sleepy",
   "description": "Simple baby wake and sleep window timer",
   "start_url": ".",
   "display": "standalone",

@@ -11,7 +11,7 @@ struct TimerView: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
-                    Text("Nappy")
+                    Text("Sleepy")
                         .font(.largeTitle.bold())
                     Text(Date.now, style: .date)
                         .foregroundStyle(.secondary)

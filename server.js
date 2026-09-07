@@ -47,7 +47,7 @@ const server = createServer((request, response) => {
 });
 
 server.listen(port, "0.0.0.0", () => {
-  console.log(`Nappy server listening on port ${port}`);
+  console.log(`Sleepy server listening on port ${port}`);
 });
 
 async function createStore() {

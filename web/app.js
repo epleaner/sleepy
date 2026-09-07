@@ -1,7 +1,7 @@
 import "./styles.css";
 import "@phosphor-icons/web/regular";
 
-const HOUSEHOLD_STORAGE_KEY = "nappy.household.id";
+const HOUSEHOLD_STORAGE_KEY = "sleepy.household.id";
 const API_ROOT = "/api";
 const WAKE_CUE_SECONDS = 75 * 60;
 const NAP_REMINDER_SECONDS = 105 * 60;
@@ -449,7 +449,7 @@ function renderInstallPanel() {
   if (deferredInstallPrompt) {
     return `<section class="panel install-panel" aria-labelledby="install-title">
       <h2 id="install-title" class="panel-title">Install</h2>
-      <button class="secondary-button install-button" data-action="install-app" type="button">Install Nappy as App</button>
+      <button class="secondary-button install-button" data-action="install-app" type="button">Install Sleepy as App</button>
     </section>`;
   }
   if (isIosDevice()) {
@@ -476,7 +476,7 @@ async function installApp() {
     await prompt.prompt();
     await prompt.userChoice;
   } catch {
-    showToast("Could not install Nappy");
+    showToast("Could not install Sleepy");
   } finally {
     render();
   }
@@ -597,7 +597,7 @@ async function requestNotificationPermission() {
 }
 
 function showNotification(body) {
-  if ("Notification" in window && Notification.permission === "granted") new Notification("Nappy", { body });
+  if ("Notification" in window && Notification.permission === "granted") new Notification("Sleepy", { body });
   showToast(body);
 }
 
@@ -672,7 +672,7 @@ async function shareHousehold() {
   const shareUrl = url.toString();
   try {
     if (navigator.share) {
-      await navigator.share({ title: "Join our Nappy household", text: "Use this link to share our Nappy sleep log.", url: shareUrl });
+      await navigator.share({ title: "Join our Sleepy household", text: "Use this link to share our Sleepy sleep log.", url: shareUrl });
       return;
     }
     await navigator.clipboard.writeText(shareUrl);

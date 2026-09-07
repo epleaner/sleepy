@@ -1,6 +1,6 @@
 import XCTest
 
-final class NappyAppLaunchTests: XCTestCase {
+final class SleepyAppLaunchTests: XCTestCase {
     func testAppLaunchesToTimerTab() throws {
         let app = XCUIApplication()
         app.launchArguments = ["UITEST_RESET_STORE"]

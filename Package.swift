@@ -2,13 +2,13 @@
 import PackageDescription
 
 let package = Package(
-    name: "NappyCore",
+    name: "SleepyCore",
     platforms: [.iOS(.v16), .macOS(.v13)],
     products: [
-        .library(name: "NappyCore", targets: ["NappyCore"])
+        .library(name: "SleepyCore", targets: ["SleepyCore"])
     ],
     targets: [
-        .target(name: "NappyCore", path: "NappyCore"),
-        .testTarget(name: "NappyCoreTests", dependencies: ["NappyCore"], path: "NappyCoreTests")
+        .target(name: "SleepyCore", path: "SleepyCore"),
+        .testTarget(name: "SleepyCoreTests", dependencies: ["SleepyCore"], path: "SleepyCoreTests")
     ]
 )

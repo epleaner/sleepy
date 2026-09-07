@@ -6,7 +6,7 @@ public final class EntryStore {
     private let encoder = JSONEncoder()
     private let decoder = JSONDecoder()
 
-    public init(defaults: UserDefaults = .standard, key: String = "nappy.entries") {
+    public init(defaults: UserDefaults = .standard, key: String = "sleepy.entries") {
         self.defaults = defaults
         self.key = key
     }

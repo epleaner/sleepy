@@ -1,6 +1,6 @@
 import Foundation
 import Testing
-@testable import NappyCore
+@testable import SleepyCore
 
 struct TimerEngineTests {
     @Test func switchingModesSavesStoppedModeAndStartsNext() {

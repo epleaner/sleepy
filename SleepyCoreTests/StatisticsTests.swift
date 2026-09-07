@@ -1,6 +1,6 @@
 import Foundation
 import Testing
-@testable import NappyCore
+@testable import SleepyCore
 
 struct StatisticsTests {
     @Test func averagesFilterByCurrentPeriodAndMode() {
@@ -80,8 +80,8 @@ struct StatisticsTests {
     }
 
     @Test func entriesRoundTripThroughStore() {
-        let defaults = UserDefaults(suiteName: "NappyCoreTests.store")!
-        defaults.removePersistentDomain(forName: "NappyCoreTests.store")
+        let defaults = UserDefaults(suiteName: "SleepyCoreTests.store")!
+        defaults.removePersistentDomain(forName: "SleepyCoreTests.store")
         let store = EntryStore(defaults: defaults, key: "entries")
         let entry = SleepEntry(mode: .nap, startedAt: Date(timeIntervalSince1970: 10), endedAt: Date(timeIntervalSince1970: 70), duration: 60)
 
