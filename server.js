@@ -538,7 +538,9 @@ function serializeTimer(row, serverNow = Date.now()) {
   };
 }
 function serializeTummyTimer(row, serverNow = Date.now()) {
-  const startedAt = row?.tummy_started_at ?? row?.started_at ?? row?.startedAt;
+  const startedAt = row?.tummy_started_at !== undefined
+    ? row.tummy_started_at
+    : row?.started_at ?? row?.startedAt;
   if (startedAt === null || startedAt === undefined) return null;
   return { startedAt: Number(startedAt), serverNow: Number(serverNow) };
 }
