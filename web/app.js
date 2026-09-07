@@ -44,6 +44,7 @@ let notificationTimers = [];
 let editingEntryId = null;
 let toastTimer = null;
 let refreshInFlight = false;
+let timerTickTimeout = null;
 
 const householdGate = document.querySelector("#household-gate");
 const app = document.querySelector("#app");
@@ -85,7 +86,6 @@ document.querySelector("#edit-modal").addEventListener("click", (event) => {
   if (event.target.id === "edit-modal") closeEditor();
 });
 
-setInterval(render, 1000);
 setInterval(() => refreshEntries(true), 2000);
 void boot();
 
@@ -235,8 +235,12 @@ async function refreshEntries(silent = false) {
   if (!householdId || refreshInFlight) return;
   refreshInFlight = true;
   try {
+    const previousSignature = renderSignature();
     await loadHousehold(householdId);
-    if (!app.classList.contains("hidden")) render();
+    if (!app.classList.contains("hidden")) {
+      if (previousSignature !== renderSignature()) render();
+      else updateTimerDisplay();
+    }
   } catch (error) {
     if (!silent) showToast(error.message);
   } finally {
@@ -280,6 +284,42 @@ function render() {
   renderEntriesScreen();
   renderInsightsScreen();
   renderSettingsScreen();
+  updateTimerDisplay();
+  scheduleTimerTick();
+}
+function renderSignature() {
+  const activeSignature = active
+    ? [active.mode, active.startedAt, active.accumulatedSeconds, active.lastResumedAt, active.isPaused].join(":")
+    : "none";
+  const entriesSignature = entries
+    .map((entry) => [entry.id, entry.mode, entry.startedAt, entry.endedAt, entry.duration].join(":"))
+    .join("|");
+  return `${timerRevision}|${activeSignature}|${entriesSignature}`;
+}
+
+function updateTimerDisplay() {
+  const timerValue = document.querySelector(".timer-value");
+  if (timerValue && active) timerValue.textContent = timerText(elapsedSeconds());
+
+  const totals = dailyTotals();
+  const totalValues = document.querySelectorAll("#daily-totals .total-value");
+  if (totalValues.length >= 2) {
+    totalValues[0].textContent = formatDuration(totals.wakeDuration);
+    totalValues[1].textContent = formatDuration(totals.napDuration);
+  }
+}
+
+function scheduleTimerTick() {
+  if (timerTickTimeout !== null) window.clearTimeout(timerTickTimeout);
+  if (!active) {
+    timerTickTimeout = null;
+    return;
+  }
+  const delay = Math.max(16, 1000 - (nowMs() % 1000));
+  timerTickTimeout = window.setTimeout(() => {
+    updateTimerDisplay();
+    scheduleTimerTick();
+  }, delay);
 }
 
 function renderTimerScreen() {
