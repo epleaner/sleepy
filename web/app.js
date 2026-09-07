@@ -348,10 +348,8 @@ function scheduleTimerTick() {
 
 function renderTimerScreen() {
   const timerCard = document.querySelector("#timer-card-mount");
-  const tummyTimerMount = document.querySelector("#tummy-timer-mount");
   const totals = dailyTotals();
-  timerCard.innerHTML = active ? renderActiveTimer() : "";
-  tummyTimerMount.innerHTML = renderTummyTimer();
+  timerCard.innerHTML = active ? renderActiveTimer() : activeTummy ? renderTummyOnlyTimer() : "";
 
   document.querySelector("#daily-totals").innerHTML = `
     <h2 id="totals-title" class="panel-title">Today's totals</h2>
@@ -399,6 +397,7 @@ function renderActiveTimer() {
       <div class="timer-kind ${active.mode}">${icon(active.mode === "nap" ? "moon" : "sun")}<span>${active.mode === "nap" ? "Nap" : "Wake window"}</span></div>
       <div class="timer-value" aria-live="off">${timerText(elapsed)}</div>
       ${status}
+      ${active.mode === "wake" || activeTummy ? renderInlineTummyTimer() : ""}
       <div class="timer-actions">
         ${pauseButton}
         <button class="secondary-button" data-action="stop" type="button" ${timerMutationInFlight ? "disabled" : ""}>Stop timer</button>
@@ -406,27 +405,30 @@ function renderActiveTimer() {
     </section>
   `;
 }
-function renderTummyTimer() {
-  if (activeTummy) {
-    return `
-      <section class="timer-card tummy-timer-card" aria-label="Tummy time timer">
-        <div class="timer-kind tummy">${icon("timer")}<span>Tummy time</span></div>
-        <div class="timer-value tummy-timer-value" aria-live="off">${timerText(tummyElapsedSeconds())}</div>
-        <p class="timer-note">Running independently of the wake window.</p>
-        <div class="timer-actions">
-          <button class="secondary-button" data-action="stop-tummy" type="button" ${tummyTimerMutationInFlight ? "disabled" : ""}>Stop tummy time</button>
-        </div>
-      </section>
-    `;
-  }
+function renderInlineTummyTimer() {
   const wakeActive = active?.mode === "wake";
+  const actionButton = activeTummy
+    ? `<button class="secondary-button inline-tummy-action" data-action="stop-tummy" type="button" ${tummyTimerMutationInFlight ? "disabled" : ""}>Stop</button>`
+    : `<button class="primary-button tummy inline-tummy-action" data-action="start-tummy" type="button" ${wakeActive && !tummyTimerMutationInFlight ? "" : "disabled"}>Start</button>`;
+  const detail = activeTummy
+    ? `<span class="inline-tummy-value tummy-timer-value" aria-live="off">${timerText(tummyElapsedSeconds())}</span>`
+    : `<p class="timer-note">${wakeActive ? "Track without changing the wake window." : "Available during a wake window."}</p>`;
   return `
-    <section class="timer-card tummy-timer-card" aria-label="Tummy time timer">
-      <div class="timer-kind tummy">${icon("timer")}<span>Tummy time</span></div>
-      <p class="timer-note">${wakeActive ? "Track tummy time without changing the wake window." : "Available during a wake window."}</p>
-      <div class="timer-actions">
-        <button class="primary-button tummy" data-action="start-tummy" type="button" ${wakeActive && !tummyTimerMutationInFlight ? "" : "disabled"}>Start tummy time</button>
+    <div class="inline-tummy-timer" aria-label="Tummy time timer">
+      <div class="inline-tummy-copy">
+        <div class="timer-kind tummy">${icon("timer")}<span>Tummy time</span></div>
+        ${detail}
       </div>
+      ${actionButton}
+    </div>
+  `;
+}
+
+function renderTummyOnlyTimer() {
+  return `
+    <section class="timer-card tummy-only-card" aria-label="Tummy time timer">
+      <p class="timer-note">Wake window ended; tummy time is still running.</p>
+      ${renderInlineTummyTimer()}
     </section>
   `;
 }
