@@ -33,9 +33,11 @@ if (params.has("reset") && !params.has("household")) localStorage.removeItem(HOU
 let householdId = null;
 let entries = [];
 let active = null;
+let activeTummy = null;
 let timerRevision = 0;
 let serverClockOffset = 0;
 let timerMutationInFlight = false;
+let tummyTimerMutationInFlight = false;
 let householdDeletionInFlight = false;
 let deferredInstallPrompt = null;
 let selectedTab = "timer";
@@ -193,9 +195,11 @@ function applyTimerState(state, requestNotifications = false) {
   if (nextRevision < timerRevision) return;
   const previous = active;
   timerRevision = nextRevision;
+  activeTummy = state.activeTummyTimer ? normalizeTummyTimer(state.activeTummyTimer) : null;
   if (!state.activeTimer) {
     active = null;
     if (previous) cancelWakeNotifications();
+    if (activeTummy) serverClockOffset = activeTummy.serverNow - Date.now();
     return;
   }
   const next = normalizeTimer(state.activeTimer);
@@ -223,11 +227,28 @@ async function mutateTimer(action, mode = null, requestNotifications = false) {
     });
     if (state.entry) entries = [normalizeEntry(state.entry), ...entries].sort((a, b) => b.startedAt - a.startedAt);
     applyTimerState(state, requestNotifications);
-    render();
   } catch (error) {
     showToast(error.message);
   } finally {
     timerMutationInFlight = false;
+    render();
+  }
+}
+async function mutateTummyTimer(action) {
+  if (!householdId || tummyTimerMutationInFlight) return;
+  tummyTimerMutationInFlight = true;
+  try {
+    const state = await api(householdPath(householdId, "/tummy-timer"), {
+      method: "POST",
+      body: JSON.stringify({ action })
+    });
+    if (state.entry) entries = [normalizeEntry(state.entry), ...entries].sort((a, b) => b.startedAt - a.startedAt);
+    applyTimerState(state);
+  } catch (error) {
+    showToast(error.message);
+  } finally {
+    tummyTimerMutationInFlight = false;
+    render();
   }
 }
 
@@ -291,15 +312,18 @@ function renderSignature() {
   const activeSignature = active
     ? [active.mode, active.startedAt, active.accumulatedSeconds, active.lastResumedAt, active.isPaused].join(":")
     : "none";
+  const tummySignature = activeTummy ? [activeTummy.startedAt].join(":") : "none";
   const entriesSignature = entries
     .map((entry) => [entry.id, entry.mode, entry.startedAt, entry.endedAt, entry.duration].join(":"))
     .join("|");
-  return `${timerRevision}|${activeSignature}|${entriesSignature}`;
+  return `${timerRevision}|${activeSignature}|${tummySignature}|${entriesSignature}`;
 }
 
 function updateTimerDisplay() {
   const timerValue = document.querySelector(".timer-value");
   if (timerValue && active) timerValue.textContent = timerText(elapsedSeconds());
+  const tummyTimerValue = document.querySelector(".tummy-timer-value");
+  if (tummyTimerValue && activeTummy) tummyTimerValue.textContent = timerText(tummyElapsedSeconds());
 
   const totals = dailyTotals();
   const totalValues = document.querySelectorAll("#daily-totals .total-value");
@@ -311,7 +335,7 @@ function updateTimerDisplay() {
 
 function scheduleTimerTick() {
   if (timerTickTimeout !== null) window.clearTimeout(timerTickTimeout);
-  if (!active) {
+  if (!active && !activeTummy) {
     timerTickTimeout = null;
     return;
   }
@@ -324,8 +348,10 @@ function scheduleTimerTick() {
 
 function renderTimerScreen() {
   const timerCard = document.querySelector("#timer-card-mount");
+  const tummyTimerMount = document.querySelector("#tummy-timer-mount");
   const totals = dailyTotals();
   timerCard.innerHTML = active ? renderActiveTimer() : "";
+  tummyTimerMount.innerHTML = renderTummyTimer();
 
   document.querySelector("#daily-totals").innerHTML = `
     <h2 id="totals-title" class="panel-title">Today's totals</h2>
@@ -354,6 +380,8 @@ function renderTimerScreen() {
   document.querySelectorAll("[data-action='start']").forEach((button) => button.addEventListener("click", () => { void startMode(button.dataset.mode); }));
   document.querySelector("[data-action='pause']")?.addEventListener("click", () => { void toggleNapPause(); });
   document.querySelector("[data-action='stop']")?.addEventListener("click", () => { void stopTimer(); });
+  document.querySelector("[data-action='start-tummy']")?.addEventListener("click", () => { void startTummyTimer(); });
+  document.querySelector("[data-action='stop-tummy']")?.addEventListener("click", () => { void stopTummyTimer(); });
 }
 
 function renderActiveTimer() {
@@ -378,6 +406,31 @@ function renderActiveTimer() {
     </section>
   `;
 }
+function renderTummyTimer() {
+  if (activeTummy) {
+    return `
+      <section class="timer-card tummy-timer-card" aria-label="Tummy time timer">
+        <div class="timer-kind tummy">${icon("timer")}<span>Tummy time</span></div>
+        <div class="timer-value tummy-timer-value" aria-live="off">${timerText(tummyElapsedSeconds())}</div>
+        <p class="timer-note">Running independently of the wake window.</p>
+        <div class="timer-actions">
+          <button class="secondary-button" data-action="stop-tummy" type="button" ${tummyTimerMutationInFlight ? "disabled" : ""}>Stop tummy time</button>
+        </div>
+      </section>
+    `;
+  }
+  const wakeActive = active?.mode === "wake";
+  return `
+    <section class="timer-card tummy-timer-card" aria-label="Tummy time timer">
+      <div class="timer-kind tummy">${icon("timer")}<span>Tummy time</span></div>
+      <p class="timer-note">${wakeActive ? "Track tummy time without changing the wake window." : "Available during a wake window."}</p>
+      <div class="timer-actions">
+        <button class="primary-button tummy" data-action="start-tummy" type="button" ${wakeActive && !tummyTimerMutationInFlight ? "" : "disabled"}>Start tummy time</button>
+      </div>
+    </section>
+  `;
+}
+
 
 function renderModeButton(mode) {
   const isActive = active?.mode === mode;
@@ -391,11 +444,21 @@ function renderTotal(title, duration, color, iconName) {
     <span class="total-value">${formatDuration(duration)}</span>
   </div>`;
 }
+function entryModeLabel(mode) {
+  if (mode === "nap") return "Sleep";
+  if (mode === "tummy") return "Tummy time";
+  return "Wake";
+}
+
+function entryModeIcon(mode) {
+  return mode === "nap" ? "moon" : mode === "tummy" ? "timer" : "sun";
+}
+
 
 function renderHomeEntry(entry) {
   return `<div class="entry-row">
     <div class="entry-main">
-      ${icon(entry.mode === "nap" ? "moon" : "sun")}<span class="entry-type">${entry.mode === "nap" ? "Sleep" : "Wake"}</span>
+      ${icon(entryModeIcon(entry.mode))}<span class="entry-type">${entryModeLabel(entry.mode)}</span>
       <span class="entry-time">${formatTime(new Date(entry.startedAt))}</span>
     </div>
     <span class="entry-duration">${formatDuration(entry.duration)}</span>
@@ -426,15 +489,16 @@ function renderEntriesScreen() {
 }
 
 function renderManagedEntry(entry) {
+  const label = entryModeLabel(entry.mode);
   return `<div class="entry-row">
     <div class="entry-main">
-      ${icon(entry.mode === "nap" ? "moon" : "sun")}<span class="entry-type">${entry.mode === "nap" ? "Sleep" : "Wake"}</span>
+      ${icon(entryModeIcon(entry.mode))}<span class="entry-type">${label}</span>
       <span class="entry-time">${formatTime(new Date(entry.startedAt))} – ${formatTime(new Date(entry.endedAt))}</span>
     </div>
     <span class="entry-duration">${formatDuration(entry.duration)}</span>
     <div class="entry-actions">
-      <button class="icon-button" data-action="edit" data-id="${entry.id}" type="button" aria-label="Edit ${entry.mode === "nap" ? "sleep" : "wake"} entry">${icon("edit")}</button>
-      <button class="icon-button delete-button" data-action="delete" data-id="${entry.id}" type="button" aria-label="Delete ${entry.mode === "nap" ? "sleep" : "wake"} entry">${icon("trash")}</button>
+      <button class="icon-button" data-action="edit" data-id="${entry.id}" type="button" aria-label="Edit ${label.toLowerCase()} entry">${icon("edit")}</button>
+      <button class="icon-button delete-button" data-action="delete" data-id="${entry.id}" type="button" aria-label="Delete ${label.toLowerCase()} entry">${icon("trash")}</button>
     </div>
   </div>`;
 }
@@ -557,12 +621,27 @@ async function stopTimer() {
   if (!active || timerMutationInFlight) return;
   await mutateTimer("stop");
 }
+async function startTummyTimer() {
+  if (active?.mode !== "wake" || activeTummy || tummyTimerMutationInFlight) return;
+  await mutateTummyTimer("start");
+}
+
+async function stopTummyTimer() {
+  if (!activeTummy || tummyTimerMutationInFlight) return;
+  await mutateTummyTimer("stop");
+}
+
 
 function elapsedSeconds(now = nowMs()) {
   if (!active) return 0;
   if (active.isPaused || active.lastResumedAt === null) return active.accumulatedSeconds;
   return Math.max(0, active.accumulatedSeconds + (now - active.lastResumedAt) / 1000);
 }
+function tummyElapsedSeconds(now = nowMs()) {
+  if (!activeTummy) return 0;
+  return Math.max(0, (now - activeTummy.startedAt) / 1000);
+}
+
 
 function nowMs() {
   return Date.now() + serverClockOffset;
@@ -744,6 +823,7 @@ async function deleteHousehold() {
     householdId = null;
     entries = [];
     active = null;
+    activeTummy = null;
     timerRevision = 0;
     serverClockOffset = 0;
     selectedTab = "timer";
@@ -772,6 +852,10 @@ function normalizeTimer(timer) {
     isPaused: Boolean(timer.isPaused),
     serverNow: Number(timer.serverNow)
   };
+}
+
+function normalizeTummyTimer(timer) {
+  return { startedAt: Number(timer.startedAt), serverNow: Number(timer.serverNow) };
 }
 
 function normalizeHouseholdId(value) {

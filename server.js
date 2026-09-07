@@ -25,15 +25,22 @@ const schema = `
     is_paused BOOLEAN NOT NULL DEFAULT FALSE,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
   );
+  CREATE TABLE IF NOT EXISTS active_tummy_timers (
+    household_id TEXT PRIMARY KEY REFERENCES households(id) ON DELETE CASCADE,
+    started_at TIMESTAMPTZ NOT NULL,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  );
   CREATE TABLE IF NOT EXISTS entries (
     id UUID PRIMARY KEY,
     household_id TEXT NOT NULL REFERENCES households(id) ON DELETE CASCADE,
-    mode TEXT NOT NULL CHECK (mode IN ('wake', 'nap')),
+    mode TEXT NOT NULL CHECK (mode IN ('wake', 'nap', 'tummy')),
     started_at TIMESTAMPTZ NOT NULL,
     ended_at TIMESTAMPTZ NOT NULL,
     duration_seconds INTEGER NOT NULL CHECK (duration_seconds >= 0),
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
   );
+  ALTER TABLE entries DROP CONSTRAINT IF EXISTS entries_mode_check;
+  ALTER TABLE entries ADD CONSTRAINT entries_mode_check CHECK (mode IN ('wake', 'nap', 'tummy'));
   CREATE INDEX IF NOT EXISTS entries_household_started_idx ON entries(household_id, started_at DESC);
 `;
 
@@ -61,8 +68,7 @@ async function createStore() {
   return {
     async createHousehold(name) {
       try {
-        const result = await pool.query("INSERT INTO households (id) VALUES ($1) RETURNING id", [name]);
-        return { id: result.rows[0].id, entries: [] };
+        return { id: result.rows[0].id, timerRevision: 0, activeTimer: null, activeTummyTimer: null, entries: [] };
       } catch (error) {
         if (error.code === "23505") throw httpError(409, "That household name already exists.");
         throw error;
@@ -73,9 +79,11 @@ async function createStore() {
         `SELECT h.id, h.timer_revision, EXTRACT(EPOCH FROM NOW()) * 1000 AS server_now,
                 t.mode, EXTRACT(EPOCH FROM t.started_at) * 1000 AS started_at,
                 t.accumulated_seconds, EXTRACT(EPOCH FROM t.last_resumed_at) * 1000 AS last_resumed_at,
-                t.is_paused
+                t.is_paused,
+                EXTRACT(EPOCH FROM tt.started_at) * 1000 AS tummy_started_at
          FROM households h
          LEFT JOIN active_timers t ON t.household_id = h.id
+         LEFT JOIN active_tummy_timers tt ON tt.household_id = h.id
          WHERE LOWER(h.id) = LOWER($1)`,
         [id]
       );
@@ -89,6 +97,7 @@ async function createStore() {
         id: row.id,
         timerRevision: Number(row.timer_revision),
         activeTimer: serializeTimer(row, Number(row.server_now)),
+        activeTummyTimer: serializeTummyTimer(row, Number(row.server_now)),
         entries: result.rows.map(serializeEntry)
       };
     },
@@ -102,12 +111,9 @@ async function createStore() {
         );
         const current = currentResult.rows[0] || null;
         const revision = Number(household.rows[0].timer_revision);
-        if (action === "start" && current?.mode === mode) {
-          const state = await readActiveTimer(client, householdId);
-          return { timerRevision: revision, activeTimer: serializeTimer(state, Number(state.server_now)), entry: null };
-        }
+        if (action === "start" && current?.mode === mode) return readTimerState(client, householdId, revision);
         if ((action === "pause" || action === "resume") && !current) throw httpError(409, "No active timer");
-        if (action === "stop" && !current) return { timerRevision: revision, activeTimer: null, entry: null };
+        if (action === "stop" && !current) return readTimerState(client, householdId, revision);
 
         let entry = null;
         if (current && (action === "stop" || (action === "start" && current.mode !== mode))) {
@@ -128,12 +134,36 @@ async function createStore() {
           await client.query("UPDATE active_timers SET last_resumed_at = NOW(), is_paused = FALSE, updated_at = NOW() WHERE household_id = $1", [householdId]);
         }
         const revisionResult = await client.query("UPDATE households SET timer_revision = timer_revision + 1 WHERE id = $1 RETURNING timer_revision", [householdId]);
-        const state = await readActiveTimer(client, householdId);
-        return {
-          timerRevision: Number(revisionResult.rows[0].timer_revision),
-          activeTimer: state ? serializeTimer(state, Number(state.server_now)) : null,
-          entry
-        };
+        return { ...(await readTimerState(client, householdId, Number(revisionResult.rows[0].timer_revision))), entry };
+      });
+    },
+    async mutateTummyTimer(householdId, action) {
+      return withTransaction(pool, async (client) => {
+        const household = await client.query("SELECT id, timer_revision FROM households WHERE id = $1 FOR UPDATE", [householdId]);
+        if (!household.rowCount) throw httpError(404, "Household not found");
+        const currentResult = await client.query(
+          "SELECT started_at FROM active_tummy_timers WHERE household_id = $1 FOR UPDATE",
+          [householdId]
+        );
+        const current = currentResult.rows[0] || null;
+        const revision = Number(household.rows[0].timer_revision);
+        if (action === "start") {
+          if (current) return readTimerState(client, householdId, revision);
+          const wake = await client.query("SELECT 1 FROM active_timers WHERE household_id = $1 AND mode = 'wake'", [householdId]);
+          if (!wake.rowCount) throw httpError(409, "Start a wake window before tummy time.");
+          await client.query(
+            "INSERT INTO active_tummy_timers (household_id, started_at) VALUES ($1, NOW())",
+            [householdId]
+          );
+        } else if (action === "stop") {
+          if (!current) return readTimerState(client, householdId, revision);
+          const entry = await completeActiveTummyTimer(client, householdId);
+          await client.query("DELETE FROM active_tummy_timers WHERE household_id = $1", [householdId]);
+          const revisionResult = await client.query("UPDATE households SET timer_revision = timer_revision + 1 WHERE id = $1 RETURNING timer_revision", [householdId]);
+          return { ...(await readTimerState(client, householdId, Number(revisionResult.rows[0].timer_revision))), entry };
+        }
+        const revisionResult = await client.query("UPDATE households SET timer_revision = timer_revision + 1 WHERE id = $1 RETURNING timer_revision", [householdId]);
+        return readTimerState(client, householdId, Number(revisionResult.rows[0].timer_revision));
       });
     },
     async createEntry(householdId, entry) {
@@ -168,6 +198,7 @@ function createMemoryStore() {
   const households = new Map();
   const entries = new Map();
   const timers = new Map();
+  const tummyTimers = new Map();
   const timerRevisions = new Map();
   return {
     async createHousehold(name) {
@@ -178,7 +209,7 @@ function createMemoryStore() {
       households.set(name, true);
       entries.set(name, []);
       timerRevisions.set(name, 0);
-      return { id: name, timerRevision: 0, activeTimer: null, entries: [] };
+      return { id: name, timerRevision: 0, activeTimer: null, activeTummyTimer: null, entries: [] };
     },
     async getHousehold(id) {
       const storedId = [...households.keys()].find((existing) => existing.toLocaleLowerCase() === id.toLocaleLowerCase());
@@ -187,6 +218,7 @@ function createMemoryStore() {
         id: storedId,
         timerRevision: timerRevisions.get(storedId),
         activeTimer: timers.has(storedId) ? serializeTimer(timers.get(storedId)) : null,
+        activeTummyTimer: tummyTimers.has(storedId) ? serializeTummyTimer(tummyTimers.get(storedId)) : null,
         entries: [...entries.get(storedId)].sort((a, b) => b.startedAt - a.startedAt)
       };
     },
@@ -218,7 +250,56 @@ function createMemoryStore() {
       }
       const nextRevision = revision + 1;
       timerRevisions.set(householdId, nextRevision);
-      return { timerRevision: nextRevision, activeTimer: timers.has(householdId) ? serializeTimer(timers.get(householdId)) : null, entry };
+      return {
+        timerRevision: nextRevision,
+        activeTimer: timers.has(householdId) ? serializeTimer(timers.get(householdId)) : null,
+        activeTummyTimer: tummyTimers.has(householdId) ? serializeTummyTimer(tummyTimers.get(householdId)) : null,
+        entry
+      };
+    },
+    async mutateTummyTimer(householdId, action) {
+      assertMemoryHousehold(households, householdId);
+      const current = tummyTimers.get(householdId) || null;
+      const revision = timerRevisions.get(householdId);
+      if (action === "start") {
+        if (current) {
+          return {
+            timerRevision: revision,
+            activeTimer: timers.has(householdId) ? serializeTimer(timers.get(householdId)) : null,
+            activeTummyTimer: serializeTummyTimer(current),
+            entry: null
+          };
+        }
+        if (timers.get(householdId)?.mode !== "wake") throw httpError(409, "Start a wake window before tummy time.");
+        tummyTimers.set(householdId, { startedAt: Date.now() });
+      } else if (action === "stop") {
+        if (!current) {
+          return {
+            timerRevision: revision,
+            activeTimer: timers.has(householdId) ? serializeTimer(timers.get(householdId)) : null,
+            activeTummyTimer: null,
+            entry: null
+          };
+        }
+        const entry = completeMemoryTummyTimer(entries.get(householdId), current);
+        tummyTimers.delete(householdId);
+        const nextRevision = revision + 1;
+        timerRevisions.set(householdId, nextRevision);
+        return {
+          timerRevision: nextRevision,
+          activeTimer: timers.has(householdId) ? serializeTimer(timers.get(householdId)) : null,
+          activeTummyTimer: null,
+          entry
+        };
+      }
+      const nextRevision = revision + 1;
+      timerRevisions.set(householdId, nextRevision);
+      return {
+        timerRevision: nextRevision,
+        activeTimer: timers.has(householdId) ? serializeTimer(timers.get(householdId)) : null,
+        activeTummyTimer: serializeTummyTimer(tummyTimers.get(householdId)),
+        entry: null
+      };
     },
     async createEntry(householdId, entry) {
       assertMemoryHousehold(households, householdId);
@@ -245,6 +326,7 @@ function createMemoryStore() {
       households.delete(householdId);
       entries.delete(householdId);
       timers.delete(householdId);
+      tummyTimers.delete(householdId);
       timerRevisions.delete(householdId);
       return true;
     }
@@ -282,6 +364,11 @@ async function handleApi(request, response, parts) {
     const household = await store.getHousehold(householdId);
     if (!household) sendJson(response, 404, { error: "Household not found" });
     else sendJson(response, 200, { id: household.id });
+    return;
+  }
+  if (parts.length === 4 && parts[3] === "tummy-timer" && request.method === "POST") {
+    const { action } = parseTummyTimerAction(await readJson(request));
+    sendJson(response, 200, await store.mutateTummyTimer(householdId, action));
     return;
   }
   if (parts.length === 4 && parts[3] === "timer" && request.method === "POST") {
@@ -347,7 +434,7 @@ async function serveStatic(requestPath, response) {
 }
 
 function parseEntry(payload, id = payload?.id || randomUUID()) {
-  if (!payload || !["wake", "nap"].includes(payload.mode)) throw httpError(400, "Mode must be wake or nap");
+  if (!payload || !["wake", "nap", "tummy"].includes(payload.mode)) throw httpError(400, "Mode must be wake, nap, or tummy");
   const startedAt = Number(payload.startedAt);
   const endedAt = Number(payload.endedAt);
   const duration = Math.floor(Number(payload.duration));
@@ -359,6 +446,11 @@ function parseTimerAction(payload) {
   if (!["start", "pause", "resume", "stop"].includes(action)) throw httpError(400, "Timer action is invalid");
   if (action === "start" && !["wake", "nap"].includes(payload.mode)) throw httpError(400, "Timer mode must be wake or nap");
   return { action, mode: payload.mode };
+}
+function parseTummyTimerAction(payload) {
+  const action = payload?.action;
+  if (!["start", "stop"].includes(action)) throw httpError(400, "Tummy timer action is invalid");
+  return { action };
 }
 
 async function withTransaction(pool, callback) {
@@ -386,6 +478,25 @@ async function readActiveTimer(client, householdId) {
   );
   return result.rows[0] || null;
 }
+async function readActiveTummyTimer(client, householdId) {
+  const result = await client.query(
+    "SELECT EXTRACT(EPOCH FROM started_at) * 1000 AS started_at, EXTRACT(EPOCH FROM NOW()) * 1000 AS server_now FROM active_tummy_timers WHERE household_id = $1",
+    [householdId]
+  );
+  return result.rows[0] || null;
+}
+
+async function readTimerState(client, householdId, timerRevision) {
+  const active = await readActiveTimer(client, householdId);
+  const tummy = await readActiveTummyTimer(client, householdId);
+  return {
+    timerRevision,
+    activeTimer: serializeTimer(active, Number(active?.server_now ?? Date.now())),
+    activeTummyTimer: serializeTummyTimer(tummy, Number(tummy?.server_now ?? Date.now())),
+    entry: null
+  };
+}
+
 
 async function completeActiveTimer(client, householdId) {
   const result = await client.query(
@@ -400,6 +511,19 @@ async function completeActiveTimer(client, householdId) {
   );
   return serializeEntry(result.rows[0]);
 }
+async function completeActiveTummyTimer(client, householdId) {
+  const result = await client.query(
+    `INSERT INTO entries (id, household_id, mode, started_at, ended_at, duration_seconds)
+     SELECT $1, $2, 'tummy', started_at, NOW(),
+            FLOOR(EXTRACT(EPOCH FROM (NOW() - started_at)))::integer
+     FROM active_tummy_timers WHERE household_id = $3
+     RETURNING id, mode, EXTRACT(EPOCH FROM started_at) * 1000 AS started_at,
+               EXTRACT(EPOCH FROM ended_at) * 1000 AS ended_at, duration_seconds`,
+    [randomUUID(), householdId, householdId]
+  );
+  return serializeEntry(result.rows[0]);
+}
+
 
 function serializeTimer(row, serverNow = Date.now()) {
   if (!row?.mode) return null;
@@ -413,6 +537,11 @@ function serializeTimer(row, serverNow = Date.now()) {
     serverNow: Number(serverNow)
   };
 }
+function serializeTummyTimer(row, serverNow = Date.now()) {
+  const startedAt = row?.tummy_started_at ?? row?.started_at ?? row?.startedAt;
+  if (startedAt === null || startedAt === undefined) return null;
+  return { startedAt: Number(startedAt), serverNow: Number(serverNow) };
+}
 
 function timerElapsedSeconds(timer, now) {
   const resumedAt = timer.last_resumed_at ?? timer.lastResumedAt;
@@ -424,6 +553,12 @@ function timerElapsedSeconds(timer, now) {
 function completeMemoryTimer(householdEntries, timer) {
   const endedAt = Date.now();
   const entry = { id: randomUUID(), mode: timer.mode, startedAt: timer.startedAt, endedAt, duration: timerElapsedSeconds(timer, endedAt) };
+  householdEntries.push(entry);
+  return entry;
+}
+function completeMemoryTummyTimer(householdEntries, timer) {
+  const endedAt = Date.now();
+  const entry = { id: randomUUID(), mode: "tummy", startedAt: timer.startedAt, endedAt, duration: Math.max(0, Math.floor((endedAt - timer.startedAt) / 1000)) };
   householdEntries.push(entry);
   return entry;
 }
