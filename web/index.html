@@ -20,12 +20,16 @@
       <p class="eyebrow">Nappy</p>
       <h1 id="household-title">Your household</h1>
       <p class="gate-intro">Share one simple sleep log with everyone who helps care for your little one.</p>
-      <button id="create-household" class="primary-button wake" type="button">Start a household</button>
+      <form id="create-household-form" class="create-household-form">
+        <label for="household-name">Household name</label>
+        <input id="household-name" name="name" inputmode="text" autocomplete="off" maxlength="64" placeholder="The Smiths" required>
+        <button id="create-household" class="primary-button wake" type="submit">Start a household</button>
+      </form>
       <div class="gate-divider"><span>or</span></div>
       <form id="join-form">
-        <label for="household-code">Join with a household ID</label>
+        <label for="household-code">Join with a household name</label>
         <div class="join-row">
-          <input id="household-code" name="household" inputmode="text" autocomplete="off" placeholder="C0FFEE42" maxlength="8" required>
+          <input id="household-code" name="household" inputmode="text" autocomplete="off" placeholder="The Smiths" maxlength="64" required>
           <button class="secondary-button" type="submit">Join</button>
         </div>
       </form>

@@ -49,12 +49,16 @@ const householdGate = document.querySelector("#household-gate");
 const app = document.querySelector("#app");
 const householdError = document.querySelector("#household-error");
 const householdCode = document.querySelector("#household-code");
+const householdName = document.querySelector("#household-name");
 const timerScreen = document.querySelector("#timer-screen");
 const entriesScreen = document.querySelector("#entries-screen");
 const insightsScreen = document.querySelector("#insights-screen");
 const settingsScreen = document.querySelector("#settings-screen");
 
-document.querySelector("#create-household").addEventListener("click", createHousehold);
+document.querySelector("#create-household-form").addEventListener("submit", (event) => {
+  event.preventDefault();
+  void createHousehold();
+});
 document.querySelector("#join-form").addEventListener("submit", (event) => {
   event.preventDefault();
   joinHousehold(householdCode.value);
@@ -62,7 +66,7 @@ document.querySelector("#join-form").addEventListener("submit", (event) => {
 document.querySelector("#share-household").addEventListener("click", shareHousehold);
 document.querySelector("#add-entry").addEventListener("click", openNewEntry);
 document.querySelector("#settings-content").addEventListener("click", (event) => {
-  if (event.target.closest("[data-action='copy-household']")) void copyHouseholdId();
+  if (event.target.closest("[data-action='copy-household']")) void copyHouseholdName();
   if (event.target.closest("[data-action='install-app']")) void installApp();
   if (event.target.closest("[data-action='delete-household']")) void deleteHousehold();
 });
@@ -89,8 +93,8 @@ async function boot() {
   const queryValue = params.get("household");
   const queryHousehold = normalizeHouseholdId(queryValue || "");
   if (queryValue && !queryHousehold) {
-    showGate("That household link is invalid. Enter an eight-character household ID.");
-    householdCode.value = queryValue.slice(0, 8).toUpperCase();
+    showGate("That household link is invalid. Enter a household name.");
+    householdCode.value = queryValue;
     return;
   }
   if (queryHousehold) {
@@ -113,10 +117,15 @@ async function boot() {
 }
 
 async function createHousehold() {
+  const name = normalizeHouseholdName(householdName.value);
+  if (!name) {
+    showGate("Enter a valid household name.");
+    return;
+  }
   setGateBusy(true);
   clearGateError();
   try {
-    const household = await api("/households", { method: "POST" });
+    const household = await api("/households", { method: "POST", body: JSON.stringify({ name }) });
     await loadHousehold(household.id);
     enterHousehold(household.id);
   } catch (error) {
@@ -129,15 +138,15 @@ async function createHousehold() {
 async function joinHousehold(value, fromLink = false) {
   const id = normalizeHouseholdId(value);
   if (!id) {
-    showGate("Enter the eight-character household ID.");
+    showGate("Enter a valid household name.");
     return;
   }
   setGateBusy(true);
   clearGateError();
   try {
-    await api(`/households/${id}/join`, { method: "POST" });
-    await loadHousehold(id);
-    enterHousehold(id);
+    const joined = await api(householdPath(id, "/join"), { method: "POST" });
+    await loadHousehold(joined.id);
+    enterHousehold(joined.id);
   } catch (error) {
     showGate(fromLink ? "That household could not be found." : error.message);
   } finally {
@@ -173,7 +182,7 @@ function setGateBusy(busy) {
 }
 
 async function loadHousehold(id) {
-  const household = await api(`/households/${id}`);
+  const household = await api(householdPath(id));
   entries = household.entries.map(normalizeEntry).sort((a, b) => b.startedAt - a.startedAt);
   applyTimerState(household);
 }
@@ -207,7 +216,7 @@ async function mutateTimer(action, mode = null, requestNotifications = false) {
   if (!householdId || timerMutationInFlight) return;
   timerMutationInFlight = true;
   try {
-    const state = await api(`/households/${householdId}/timer`, {
+    const state = await api(householdPath(householdId, "/timer"), {
       method: "POST",
       body: JSON.stringify({ action, ...(mode ? { mode } : {}) })
     });
@@ -414,13 +423,14 @@ function renderInsightsScreen() {
 }
 
 function renderSettingsScreen() {
+  const displayName = escapeHtml(householdId);
   document.querySelector("#settings-content").innerHTML = `
     <div class="settings-stack">
       <section class="panel" aria-labelledby="household-settings-title">
         <h2 id="household-settings-title" class="panel-title">Household</h2>
-        <p class="settings-copy">Share this ID with anyone who should join this household.</p>
-        <button class="copy-id-button" data-action="copy-household" type="button" aria-label="Copy household ID ${householdId}">
-          <code class="household-id">${householdId}</code>
+        <p class="settings-copy">Share this household name with anyone who should join.</p>
+        <button class="copy-id-button" data-action="copy-household" type="button" aria-label="Copy household name ${displayName}">
+          <code class="household-id">${displayName}</code>
           ${icon("copy")}
         </button>
       </section>
@@ -631,8 +641,8 @@ async function saveEditedEntry(event) {
   const payload = { mode: document.querySelector("#edit-mode").value, startedAt, duration, endedAt: startedAt + duration * 1000 };
   try {
     const saved = entry
-      ? await api(`/households/${householdId}/entries/${entry.id}`, { method: "PUT", body: JSON.stringify({ ...entry, ...payload }) })
-      : await api(`/households/${householdId}/entries`, { method: "POST", body: JSON.stringify(payload) });
+      ? await api(householdPath(householdId, `/entries/${entry.id}`), { method: "PUT", body: JSON.stringify({ ...entry, ...payload }) })
+      : await api(householdPath(householdId, "/entries"), { method: "POST", body: JSON.stringify(payload) });
     entries = entry
       ? entries.map((candidate) => candidate.id === entry.id ? normalizeEntry(saved) : candidate).sort((a, b) => b.startedAt - a.startedAt)
       : [normalizeEntry(saved), ...entries].sort((a, b) => b.startedAt - a.startedAt);
@@ -645,7 +655,7 @@ async function saveEditedEntry(event) {
 
 async function deleteEntry(id) {
   try {
-    await api(`/households/${householdId}/entries/${id}`, { method: "DELETE" });
+    await api(householdPath(householdId, `/entries/${id}`), { method: "DELETE" });
     entries = entries.filter((entry) => entry.id !== id);
     render();
   } catch (error) {
@@ -670,13 +680,13 @@ async function shareHousehold() {
   }
 }
 
-async function copyHouseholdId() {
+async function copyHouseholdName() {
   if (!householdId) return;
   try {
     await navigator.clipboard.writeText(householdId);
-    showToast("Household ID copied");
+    showToast("Household name copied");
   } catch {
-    showToast("Could not copy household ID");
+    showToast("Could not copy household name");
   }
 }
 
@@ -686,7 +696,7 @@ async function deleteHousehold() {
   householdDeletionInFlight = true;
   render();
   try {
-    await api(`/households/${householdId}`, { method: "DELETE" });
+    await api(householdPath(householdId), { method: "DELETE" });
     cancelWakeNotifications();
     localStorage.removeItem(HOUSEHOLD_STORAGE_KEY);
     householdId = null;
@@ -723,8 +733,31 @@ function normalizeTimer(timer) {
 }
 
 function normalizeHouseholdId(value) {
-  const id = value.toUpperCase();
-  return /^[A-F0-9]{8}$/.test(id) ? id : null;
+  if (typeof value !== "string") return null;
+  const id = value.trim();
+  if (/^[A-F0-9]{8}$/.test(id)) return id;
+  return normalizeHouseholdName(id);
+}
+
+function normalizeHouseholdName(value) {
+  if (typeof value !== "string") return null;
+  const name = value.trim();
+  if (!name || [...name].length > 64 || /[\u0000-\u001F\u007F/?#]/u.test(name)) return null;
+  return name;
+}
+
+function householdPath(id, suffix = "") {
+  return `/households/${encodeURIComponent(id)}${suffix}`;
+}
+
+function escapeHtml(value) {
+  return String(value).replace(/[&<>"']/g, (character) => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    '"': "&quot;",
+    "'": "&#39;"
+  }[character]));
 }
 
 function startOfDay(date) {

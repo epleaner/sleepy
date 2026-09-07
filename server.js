@@ -1,5 +1,5 @@
 import { createServer } from "node:http";
-import { randomBytes, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import pg from "pg";
@@ -15,6 +15,7 @@ const schema = `
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
   );
   ALTER TABLE households ADD COLUMN IF NOT EXISTS timer_revision BIGINT NOT NULL DEFAULT 0;
+  CREATE UNIQUE INDEX IF NOT EXISTS households_name_ci_idx ON households (LOWER(id));
   CREATE TABLE IF NOT EXISTS active_timers (
     household_id TEXT PRIMARY KEY REFERENCES households(id) ON DELETE CASCADE,
     mode TEXT NOT NULL CHECK (mode IN ('wake', 'nap')),
@@ -58,15 +59,13 @@ async function createStore() {
   const pool = new Pool({ connectionString: process.env.DATABASE_URL, ssl: process.env.NODE_ENV === "production" ? { rejectUnauthorized: false } : undefined });
   await pool.query(schema);
   return {
-    async createHousehold() {
-      for (;;) {
-        const id = createHouseholdId();
-        try {
-          const result = await pool.query("INSERT INTO households (id) VALUES ($1) RETURNING id", [id]);
-          return { id: result.rows[0].id, entries: [] };
-        } catch (error) {
-          if (error.code !== "23505") throw error;
-        }
+    async createHousehold(name) {
+      try {
+        const result = await pool.query("INSERT INTO households (id) VALUES ($1) RETURNING id", [name]);
+        return { id: result.rows[0].id, entries: [] };
+      } catch (error) {
+        if (error.code === "23505") throw httpError(409, "That household name already exists.");
+        throw error;
       }
     },
     async getHousehold(id) {
@@ -77,14 +76,14 @@ async function createStore() {
                 t.is_paused
          FROM households h
          LEFT JOIN active_timers t ON t.household_id = h.id
-         WHERE h.id = $1`,
+         WHERE LOWER(h.id) = LOWER($1)`,
         [id]
       );
       if (!household.rowCount) return null;
       const row = household.rows[0];
       const result = await pool.query(
         "SELECT id, mode, EXTRACT(EPOCH FROM started_at) * 1000 AS started_at, EXTRACT(EPOCH FROM ended_at) * 1000 AS ended_at, duration_seconds FROM entries WHERE household_id = $1 ORDER BY started_at DESC",
-        [id]
+        [row.id]
       );
       return {
         id: row.id,
@@ -171,21 +170,24 @@ function createMemoryStore() {
   const timers = new Map();
   const timerRevisions = new Map();
   return {
-    async createHousehold() {
-      let id;
-      do id = createHouseholdId(); while (households.has(id));
-      households.set(id, true);
-      entries.set(id, []);
-      timerRevisions.set(id, 0);
-      return { id, timerRevision: 0, activeTimer: null, entries: [] };
+    async createHousehold(name) {
+      const key = name.toLocaleLowerCase();
+      if ([...households.keys()].some((existing) => existing.toLocaleLowerCase() === key)) {
+        throw httpError(409, "That household name already exists.");
+      }
+      households.set(name, true);
+      entries.set(name, []);
+      timerRevisions.set(name, 0);
+      return { id: name, timerRevision: 0, activeTimer: null, entries: [] };
     },
     async getHousehold(id) {
-      if (!households.has(id)) return null;
+      const storedId = [...households.keys()].find((existing) => existing.toLocaleLowerCase() === id.toLocaleLowerCase());
+      if (!storedId) return null;
       return {
-        id,
-        timerRevision: timerRevisions.get(id),
-        activeTimer: timers.has(id) ? serializeTimer(timers.get(id)) : null,
-        entries: [...entries.get(id)].sort((a, b) => b.startedAt - a.startedAt)
+        id: storedId,
+        timerRevision: timerRevisions.get(storedId),
+        activeTimer: timers.has(storedId) ? serializeTimer(timers.get(storedId)) : null,
+        entries: [...entries.get(storedId)].sort((a, b) => b.startedAt - a.startedAt)
       };
     },
     async mutateTimer(householdId, action, mode) {
@@ -251,7 +253,7 @@ function createMemoryStore() {
 
 async function handleRequest(request, response) {
   const url = new URL(request.url || "/", `http://${request.headers.host || "localhost"}`);
-  const parts = url.pathname.split("/").filter(Boolean);
+  const parts = decodePathParts(url.pathname);
 
   if (parts[0] === "api") {
     await handleApi(request, response, parts);
@@ -266,13 +268,14 @@ async function handleApi(request, response, parts) {
     return;
   }
   if (parts.length === 2 && parts[1] === "households" && request.method === "POST") {
-    sendJson(response, 201, await store.createHousehold());
+    const name = parseHouseholdName(await readJson(request));
+    sendJson(response, 201, await store.createHousehold(name));
     return;
   }
 
   const householdId = parts[2] ? normalizeHouseholdId(parts[2]) : null;
   if (!householdId) {
-    sendJson(response, 400, { error: "Household ID must be eight hexadecimal characters" });
+    sendJson(response, 400, { error: "Enter a valid household name." });
     return;
   }
   if (parts.length === 4 && parts[3] === "join" && request.method === "POST") {
@@ -440,12 +443,31 @@ async function readJson(request) {
 }
 
 function normalizeHouseholdId(value) {
-  const id = value.toUpperCase();
-  return /^[A-F0-9]{8}$/.test(id) ? id : null;
+  if (typeof value !== "string") return null;
+  const id = value.trim();
+  if (/^[A-F0-9]{8}$/.test(id)) return id;
+  return normalizeHouseholdName(id);
 }
 
-function createHouseholdId() {
-  return randomBytes(4).toString("hex").toUpperCase();
+function normalizeHouseholdName(value) {
+  if (typeof value !== "string") return null;
+  const name = value.trim();
+  if (!name || [...name].length > 64 || /[\u0000-\u001F\u007F/?#]/u.test(name)) return null;
+  return name;
+}
+
+function parseHouseholdName(payload) {
+  const name = normalizeHouseholdName(payload?.name);
+  if (!name) throw httpError(400, "Enter a valid household name.");
+  return name;
+}
+
+function decodePathParts(pathname) {
+  try {
+    return pathname.split("/").filter(Boolean).map((part) => decodeURIComponent(part));
+  } catch {
+    throw httpError(400, "Household link is invalid.");
+  }
 }
 
 

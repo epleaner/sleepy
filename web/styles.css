@@ -120,12 +120,15 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px s
 .gate-card h1 { margin: 0; color: var(--ink); font-size: 2.4rem; font-weight: 400; letter-spacing: -.05em; }
 .gate-intro { margin: 14px 0 24px; color: var(--muted); line-height: 1.5; }
 .gate-card > .primary-button { width: 100%; }
+.create-household-form { display: grid; gap: 8px; }
+.create-household-form input { width: 100%; min-height: 52px; padding: 12px 14px; border: 1px solid var(--border); border-radius: 3px; background: var(--panel-soft); color: var(--ink); }
+.create-household-form .primary-button { width: 100%; }
 .gate-divider { display: flex; align-items: center; gap: 12px; margin: 22px 0; color: var(--muted); }
 .share-button { display: inline-flex; align-items: center; gap: 7px; flex: 0 0 auto; border: 1px solid var(--border); border-radius: 999px; padding: 9px 12px; background: transparent; color: var(--muted); font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; font-size: .72rem; font-weight: 500; }
 .share-button .ui-icon { width: 1rem; height: 1rem; }
 .gate-card label { display: block; margin-bottom: 8px; color: var(--muted); font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; font-size: .82rem; }
 .join-row { display: grid; grid-template-columns: 1fr auto; gap: 8px; }
-.join-row input { min-width: 0; min-height: 52px; padding: 12px 14px; border: 1px solid var(--border); border-radius: 3px; background: var(--panel-soft); color: var(--ink); text-transform: uppercase; }
+.join-row input { min-width: 0; min-height: 52px; padding: 12px 14px; border: 1px solid var(--border); border-radius: 3px; background: var(--panel-soft); color: var(--ink); }
 .join-row .secondary-button { min-height: 52px; }
 .form-error { min-height: 1.2em; margin: 12px 0 0; color: var(--danger); font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; font-size: .78rem; }
 .share-button:hover { color: var(--accent); border-color: var(--accent); }
