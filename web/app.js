@@ -362,7 +362,7 @@ function renderActiveTimer() {
     ? '<p class="pause-note">Paused</p>'
     : active.mode === "wake"
       ? `<p class="timer-note">sleepies starting around ${formatTime(sleepiesStartAt(active.startedAt))}</p>`
-      : "";
+      : `<p class="timer-note">wake cycles around ${formatTime(wakeCycleAt(active.startedAt, 45))} and ${formatTime(wakeCycleAt(active.startedAt, 90))}</p>`;
   const pauseButton = active.mode === "nap"
     ? `<button class="primary-button pause-button" data-action="pause" type="button" ${timerMutationInFlight ? "disabled" : ""}>${active.isPaused ? "Resume nap" : "Pause nap"}</button>`
     : "";
@@ -827,10 +827,17 @@ function timerText(seconds) {
   return hours ? `${hours}:${String(minutes).padStart(2, "0")}:${String(remainder).padStart(2, "0")}` : `${String(minutes).padStart(2, "0")}:${String(remainder).padStart(2, "0")}`;
 }
 
-function sleepiesStartAt(startedAt) {
-  const target = startedAt + WAKE_CUE_SECONDS * 1000;
+function roundedUpToFiveMinutes(timestamp) {
   const fiveMinutes = 5 * 60 * 1000;
-  return new Date(Math.ceil(target / fiveMinutes) * fiveMinutes);
+  return new Date(Math.ceil(timestamp / fiveMinutes) * fiveMinutes);
+}
+
+function sleepiesStartAt(startedAt) {
+  return roundedUpToFiveMinutes(startedAt + WAKE_CUE_SECONDS * 1000);
+}
+
+function wakeCycleAt(startedAt, minutes) {
+  return roundedUpToFiveMinutes(startedAt + minutes * 60 * 1000);
 }
 
 function formatDuration(seconds) {
