@@ -46,9 +46,9 @@
         </div>
         <p id="today-date" class="muted"></p>
       </header>
+      <section id="mode-controls" aria-label="Timer controls"></section>
       <div id="timer-card-mount"></div>
       <section id="daily-totals" class="panel" aria-labelledby="totals-title"></section>
-      <section id="mode-controls" aria-label="Timer controls"></section>
       <section id="today-entries" class="panel" aria-labelledby="entries-title"></section>
     </section>
 
@@ -108,9 +108,13 @@
       <label>Started
         <input id="edit-started" name="startedAt" type="datetime-local" required>
       </label>
-      <label>Duration in minutes
-        <input id="edit-duration" name="duration" type="number" min="0" step="1" required>
+      <label>Ended
+        <input id="edit-ended" name="endedAt" type="datetime-local" required>
       </label>
+      <div class="entry-quick-actions" aria-label="Entry time shortcuts">
+        <button class="secondary-button" data-action="start-previous" type="button" disabled>Start at previous end</button>
+        <button class="secondary-button" data-action="end-next" type="button" disabled>End at next start</button>
+      </div>
       <div class="modal-actions">
         <button id="cancel-edit-secondary" class="secondary-button" type="button">Cancel</button>
         <button class="primary-button" type="submit">Save</button>

@@ -82,6 +82,12 @@ document.querySelectorAll(".tab-button").forEach((button) => {
   });
 });
 document.querySelector("#edit-form").addEventListener("submit", saveEditedEntry);
+document.querySelector("#edit-form").addEventListener("click", (event) => {
+  if (event.target.closest("[data-action='start-previous']")) setEditorStartFromPrevious();
+  if (event.target.closest("[data-action='end-next']")) setEditorEndFromNext();
+});
+document.querySelector("#edit-form").addEventListener("input", updateEditorQuickActions);
+document.querySelector("#edit-form").addEventListener("change", updateEditorQuickActions);
 document.querySelector("#cancel-edit").addEventListener("click", closeEditor);
 document.querySelector("#cancel-edit-secondary").addEventListener("click", closeEditor);
 document.querySelector("#edit-modal").addEventListener("click", (event) => {
@@ -367,9 +373,9 @@ function renderTimerScreen() {
     </div>
   `;
 
-  const todaysEntries = totals.dayStart
-    ? entries.filter((entry) => entry.startedAt >= totals.dayStart.getTime() && entry.startedAt <= Date.now())
-    : [];
+  const todayStart = startOfDay(new Date());
+  const tomorrow = new Date(todayStart.getTime() + 24 * 60 * 60 * 1000);
+  const todaysEntries = entries.filter((entry) => entry.startedAt >= todayStart.getTime() && entry.startedAt < tomorrow.getTime() && entry.startedAt <= Date.now());
   document.querySelector("#today-entries").innerHTML = `
     <h2 id="entries-title" class="panel-title">Today's entries</h2>
     ${todaysEntries.length ? todaysEntries.map(renderHomeEntry).join("") : '<p class="empty-state">No completed windows today.</p>'}
@@ -734,18 +740,21 @@ function openEditor(id) {
   document.querySelector("#edit-title").textContent = "Edit entry";
   document.querySelector("#edit-mode").value = entry.mode;
   document.querySelector("#edit-started").value = toLocalInputValue(new Date(entry.startedAt));
-  document.querySelector("#edit-duration").value = String(Math.floor(entry.duration / 60));
+  document.querySelector("#edit-ended").value = toLocalInputValue(new Date(entry.endedAt));
   document.querySelector("#edit-modal").classList.remove("hidden");
+  updateEditorQuickActions();
   document.querySelector("#edit-mode").focus();
 }
 
 function openNewEntry() {
   editingEntryId = null;
+  const now = new Date();
   document.querySelector("#edit-title").textContent = "Add entry";
   document.querySelector("#edit-mode").value = "wake";
-  document.querySelector("#edit-started").value = toLocalInputValue(new Date());
-  document.querySelector("#edit-duration").value = "0";
+  document.querySelector("#edit-started").value = toLocalInputValue(now);
+  document.querySelector("#edit-ended").value = toLocalInputValue(now);
   document.querySelector("#edit-modal").classList.remove("hidden");
+  updateEditorQuickActions();
   document.querySelector("#edit-mode").focus();
 }
 
@@ -753,14 +762,63 @@ function closeEditor() {
   editingEntryId = null;
   document.querySelector("#edit-modal").classList.add("hidden");
 }
+function editorNeighbors() {
+  const startedAt = new Date(document.querySelector("#edit-started").value).getTime();
+  const endedAt = new Date(document.querySelector("#edit-ended").value).getTime();
+  const candidates = entries
+    .filter((entry) => entry.id !== editingEntryId)
+    .sort((a, b) => a.startedAt - b.startedAt);
+  const previous = Number.isFinite(startedAt)
+    ? candidates.filter((entry) => entry.endedAt <= startedAt).pop() || null
+    : null;
+  const next = Number.isFinite(endedAt)
+    ? candidates.find((entry) => entry.startedAt >= endedAt) || null
+    : null;
+  return { previous, next };
+}
+
+function updateEditorQuickActions() {
+  const { previous, next } = editorNeighbors();
+  const previousButton = document.querySelector("[data-action='start-previous']");
+  const nextButton = document.querySelector("[data-action='end-next']");
+  previousButton.disabled = !previous;
+  nextButton.disabled = !next;
+}
+
+function setEditorStartFromPrevious() {
+  const { previous } = editorNeighbors();
+  if (!previous) return;
+  document.querySelector("#edit-started").value = toLocalInputValue(new Date(previous.endedAt));
+  updateEditorQuickActions();
+}
+
+function setEditorEndFromNext() {
+  const { next } = editorNeighbors();
+  if (!next) return;
+  document.querySelector("#edit-ended").value = toLocalInputValue(new Date(next.startedAt));
+  updateEditorQuickActions();
+}
+
 
 async function saveEditedEntry(event) {
   event.preventDefault();
   const startedAt = new Date(document.querySelector("#edit-started").value).getTime();
-  const duration = Math.max(0, Number(document.querySelector("#edit-duration").value) || 0) * 60;
-  if (!Number.isFinite(startedAt)) return;
+  const endedAt = new Date(document.querySelector("#edit-ended").value).getTime();
+  if (!Number.isFinite(startedAt) || !Number.isFinite(endedAt)) {
+    showToast("Enter valid start and end times.");
+    return;
+  }
+  if (endedAt < startedAt) {
+    showToast("End time must be after start time.");
+    return;
+  }
   const entry = entries.find((candidate) => candidate.id === editingEntryId);
-  const payload = { mode: document.querySelector("#edit-mode").value, startedAt, duration, endedAt: startedAt + duration * 1000 };
+  const payload = {
+    mode: document.querySelector("#edit-mode").value,
+    startedAt,
+    endedAt,
+    duration: Math.floor((endedAt - startedAt) / 1000)
+  };
   try {
     const saved = entry
       ? await api(householdPath(householdId, `/entries/${entry.id}`), { method: "PUT", body: JSON.stringify({ ...entry, ...payload }) })
