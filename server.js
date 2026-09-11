@@ -175,12 +175,36 @@ async function createStore() {
       return serializeEntry(result.rows[0]);
     },
     async updateEntry(householdId, entryId, entry) {
-      await assertHousehold(pool, householdId);
-      const result = await pool.query(
-        "UPDATE entries SET mode = $1, started_at = TO_TIMESTAMP($2 / 1000.0), ended_at = TO_TIMESTAMP($3 / 1000.0), duration_seconds = $4 WHERE household_id = $5 AND id = $6 RETURNING id, mode, EXTRACT(EPOCH FROM started_at) * 1000 AS started_at, EXTRACT(EPOCH FROM ended_at) * 1000 AS ended_at, duration_seconds",
-        [entry.mode, entry.startedAt, entry.endedAt, entry.duration, householdId, entryId]
-      );
-      return result.rowCount ? serializeEntry(result.rows[0]) : null;
+      return withTransaction(pool, async (client) => {
+        const household = await client.query("SELECT id FROM households WHERE id = $1 FOR UPDATE", [householdId]);
+        if (!household.rowCount) throw httpError(404, "Household not found");
+        const result = await client.query(
+          "SELECT id, mode, EXTRACT(EPOCH FROM started_at) * 1000 AS started_at, EXTRACT(EPOCH FROM ended_at) * 1000 AS ended_at, duration_seconds FROM entries WHERE household_id = $1 ORDER BY started_at ASC, ended_at ASC, id ASC FOR UPDATE",
+          [householdId]
+        );
+        const index = result.rows.findIndex((candidate) => candidate.id === entryId);
+        if (index === -1) return null;
+        const previous = result.rows[index - 1] || null;
+        const next = result.rows[index + 1] || null;
+        assertEntryBoundary(entry, previous, next);
+        const updated = await client.query(
+          "UPDATE entries SET mode = $1, started_at = TO_TIMESTAMP($2 / 1000.0), ended_at = TO_TIMESTAMP($3 / 1000.0), duration_seconds = $4 WHERE household_id = $5 AND id = $6 RETURNING id, mode, EXTRACT(EPOCH FROM started_at) * 1000 AS started_at, EXTRACT(EPOCH FROM ended_at) * 1000 AS ended_at, duration_seconds",
+          [entry.mode, entry.startedAt, entry.endedAt, entry.duration, householdId, entryId]
+        );
+        if (previous) {
+          await client.query(
+            "UPDATE entries SET ended_at = TO_TIMESTAMP($1 / 1000.0), duration_seconds = FLOOR(EXTRACT(EPOCH FROM (TO_TIMESTAMP($1 / 1000.0) - started_at)))::integer WHERE household_id = $2 AND id = $3",
+            [entry.startedAt, householdId, previous.id]
+          );
+        }
+        if (next) {
+          await client.query(
+            "UPDATE entries SET started_at = TO_TIMESTAMP($1 / 1000.0), duration_seconds = FLOOR(EXTRACT(EPOCH FROM (ended_at - TO_TIMESTAMP($1 / 1000.0))))::integer WHERE household_id = $2 AND id = $3",
+            [entry.endedAt, householdId, next.id]
+          );
+        }
+        return serializeEntry(updated.rows[0]);
+      });
     },
     async deleteEntry(householdId, entryId) {
       await assertHousehold(pool, householdId);
@@ -309,10 +333,23 @@ function createMemoryStore() {
     async updateEntry(householdId, entryId, entry) {
       assertMemoryHousehold(households, householdId);
       const householdEntries = entries.get(householdId);
-      const index = householdEntries.findIndex((candidate) => candidate.id === entryId);
-      if (index === -1) return null;
-      householdEntries[index] = { ...entry, id: entryId };
-      return householdEntries[index];
+      const target = householdEntries.find((candidate) => candidate.id === entryId);
+      if (!target) return null;
+      const ordered = [...householdEntries].sort((a, b) => a.startedAt - b.startedAt || a.endedAt - b.endedAt || a.id.localeCompare(b.id));
+      const index = ordered.findIndex((candidate) => candidate.id === entryId);
+      const previous = ordered[index - 1] || null;
+      const next = ordered[index + 1] || null;
+      assertEntryBoundary(entry, previous, next);
+      Object.assign(target, { ...entry, id: entryId });
+      if (previous) {
+        previous.endedAt = entry.startedAt;
+        previous.duration = Math.floor((previous.endedAt - previous.startedAt) / 1000);
+      }
+      if (next) {
+        next.startedAt = entry.endedAt;
+        next.duration = Math.floor((next.endedAt - next.startedAt) / 1000);
+      }
+      return target;
     },
     async deleteEntry(householdId, entryId) {
       assertMemoryHousehold(households, householdId);
@@ -607,6 +644,17 @@ function decodePathParts(pathname) {
   }
 }
 
+
+function assertEntryBoundary(entry, previous, next) {
+  const previousStartedAt = previous ? Number(previous.started_at ?? previous.startedAt) : null;
+  const nextEndedAt = next ? Number(next.ended_at ?? next.endedAt) : null;
+  if (previousStartedAt !== null && entry.startedAt < previousStartedAt) {
+    throw httpError(400, "Entry cannot start before the previous entry.");
+  }
+  if (nextEndedAt !== null && entry.endedAt > nextEndedAt) {
+    throw httpError(400, "Entry cannot end after the next entry.");
+  }
+}
 
 function serializeEntry(row) {
   return {

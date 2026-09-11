@@ -820,12 +820,13 @@ async function saveEditedEntry(event) {
     duration: Math.floor((endedAt - startedAt) / 1000)
   };
   try {
-    const saved = entry
-      ? await api(householdPath(householdId, `/entries/${entry.id}`), { method: "PUT", body: JSON.stringify({ ...entry, ...payload }) })
-      : await api(householdPath(householdId, "/entries"), { method: "POST", body: JSON.stringify(payload) });
-    entries = entry
-      ? entries.map((candidate) => candidate.id === entry.id ? normalizeEntry(saved) : candidate).sort((a, b) => b.startedAt - a.startedAt)
-      : [normalizeEntry(saved), ...entries].sort((a, b) => b.startedAt - a.startedAt);
+    if (entry) {
+      await api(householdPath(householdId, `/entries/${entry.id}`), { method: "PUT", body: JSON.stringify({ ...entry, ...payload }) });
+      await loadHousehold(householdId);
+    } else {
+      const saved = await api(householdPath(householdId, "/entries"), { method: "POST", body: JSON.stringify(payload) });
+      entries = [normalizeEntry(saved), ...entries].sort((a, b) => b.startedAt - a.startedAt);
+    }
     closeEditor();
     render();
   } catch (error) {
