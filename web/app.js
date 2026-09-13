@@ -368,8 +368,7 @@ function renderTimerScreen() {
 
   document.querySelector("#mode-controls").innerHTML = `
     <div class="controls">
-      ${renderModeButton("wake")}
-      ${renderModeButton("nap")}
+      ${renderModeButton(nextTimerMode())}
     </div>
   `;
 
@@ -439,6 +438,13 @@ function renderTummyOnlyTimer() {
   `;
 }
 
+
+function nextTimerMode() {
+  if (active?.mode === "wake") return "nap";
+  if (active?.mode === "nap") return "wake";
+  const latestWindow = entries.find((entry) => entry.mode === "wake" || entry.mode === "nap");
+  return latestWindow?.mode === "wake" ? "nap" : "wake";
+}
 
 function renderModeButton(mode) {
   const isActive = active?.mode === mode;
