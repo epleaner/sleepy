@@ -45,6 +45,8 @@ let selectedPeriod = "day";
 let notificationTimers = [];
 let editingEntryId = null;
 let toastTimer = null;
+let undoDelete = null;
+let undoDeleteInFlight = false;
 let refreshInFlight = false;
 let timerTickTimeout = null;
 
@@ -57,6 +59,9 @@ const timerScreen = document.querySelector("#timer-screen");
 const entriesScreen = document.querySelector("#entries-screen");
 const insightsScreen = document.querySelector("#insights-screen");
 const settingsScreen = document.querySelector("#settings-screen");
+const toast = document.querySelector("#toast");
+const toastMessage = document.querySelector("#toast-message");
+const toastAction = document.querySelector("#toast-action");
 
 document.querySelector("#create-household-form").addEventListener("submit", (event) => {
   event.preventDefault();
@@ -67,6 +72,7 @@ document.querySelector("#join-form").addEventListener("submit", (event) => {
   joinHousehold(householdCode.value);
 });
 document.querySelector("#share-household").addEventListener("click", shareHousehold);
+document.querySelector("#toast-action").addEventListener("click", () => { void undoDeletedEntry(); });
 document.querySelector("#add-entry").addEventListener("click", openNewEntry);
 document.querySelector("#settings-content").addEventListener("click", (event) => {
   if (event.target.closest("[data-action='copy-household']")) void copyHouseholdName();
@@ -845,11 +851,31 @@ async function saveEditedEntry(event) {
 
 async function deleteEntry(id) {
   try {
-    await api(householdPath(householdId, `/entries/${id}`), { method: "DELETE" });
+    const deletion = await api(householdPath(householdId, `/entries/${id}`), { method: "DELETE" });
+    undoDelete = deletion;
     await loadHousehold(householdId);
     render();
+    showToast("Entry deleted", "Undo");
   } catch (error) {
     showToast(error.message);
+  }
+}
+
+async function undoDeletedEntry() {
+  if (!undoDelete || undoDeleteInFlight) return;
+  undoDeleteInFlight = true;
+  toastAction.disabled = true;
+  try {
+    await api(householdPath(householdId, "/entries/restore"), { method: "POST", body: JSON.stringify(undoDelete) });
+    undoDelete = null;
+    await loadHousehold(householdId);
+    render();
+    showToast("Entry restored");
+  } catch (error) {
+    undoDelete = null;
+    showToast(error.message);
+  } finally {
+    undoDeleteInFlight = false;
   }
 }
 
@@ -1004,8 +1030,12 @@ function periodTitle(period) {
   return { day: "Today", week: "This week", month: "This month", allTime: "All time" }[period];
 }
 
-function showToast(message) {
-  toast.textContent = message;
+function showToast(message, actionLabel = "") {
+  if (!actionLabel) undoDelete = null;
+  toastMessage.textContent = message;
+  toastAction.textContent = actionLabel;
+  toastAction.classList.toggle("hidden", !actionLabel);
+  toastAction.disabled = undoDeleteInFlight;
   toast.classList.remove("hidden");
   window.clearTimeout(toastTimer);
   toastTimer = window.setTimeout(() => toast.classList.add("hidden"), 3500);

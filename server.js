@@ -211,11 +211,12 @@ async function createStore() {
         const household = await client.query("SELECT id FROM households WHERE id = $1 FOR UPDATE", [householdId]);
         if (!household.rowCount) throw httpError(404, "Household not found");
         const result = await client.query(
-          "SELECT id, EXTRACT(EPOCH FROM started_at) * 1000 AS started_at, EXTRACT(EPOCH FROM ended_at) * 1000 AS ended_at FROM entries WHERE household_id = $1 ORDER BY started_at ASC, ended_at ASC, id ASC FOR UPDATE",
+          "SELECT id, mode, EXTRACT(EPOCH FROM started_at) * 1000 AS started_at, EXTRACT(EPOCH FROM ended_at) * 1000 AS ended_at, duration_seconds FROM entries WHERE household_id = $1 ORDER BY started_at ASC, ended_at ASC, id ASC FOR UPDATE",
           [householdId]
         );
         const index = result.rows.findIndex((entry) => entry.id === entryId);
-        if (index === -1) return false;
+        if (index === -1) return null;
+        const deleted = result.rows[index];
         const previous = result.rows[index - 1] || null;
         const next = result.rows[index + 1] || null;
         await client.query("DELETE FROM entries WHERE household_id = $1 AND id = $2", [householdId, entryId]);
@@ -225,7 +226,31 @@ async function createStore() {
             [next.started_at, householdId, previous.id]
           );
         }
-        return true;
+        return {
+          deleted: serializeEntry(deleted),
+          previous: previous && next ? serializeEntry(previous) : null
+        };
+      });
+    },
+    async restoreEntry(householdId, deletion) {
+      return withTransaction(pool, async (client) => {
+        const household = await client.query("SELECT id FROM households WHERE id = $1 FOR UPDATE", [householdId]);
+        if (!household.rowCount) throw httpError(404, "Household not found");
+        const existing = await client.query("SELECT id FROM entries WHERE id = $1", [deletion.deleted.id]);
+        if (existing.rowCount) throw httpError(409, "That entry already exists.");
+        if (deletion.previous) {
+          const previous = await client.query("SELECT id FROM entries WHERE household_id = $1 AND id = $2 FOR UPDATE", [householdId, deletion.previous.id]);
+          if (!previous.rowCount) throw httpError(409, "The neighboring entry no longer exists.");
+          await client.query(
+            "UPDATE entries SET mode = $1, started_at = TO_TIMESTAMP($2 / 1000.0), ended_at = TO_TIMESTAMP($3 / 1000.0), duration_seconds = $4 WHERE household_id = $5 AND id = $6",
+            [deletion.previous.mode, deletion.previous.startedAt, deletion.previous.endedAt, deletion.previous.duration, householdId, deletion.previous.id]
+          );
+        }
+        const result = await client.query(
+          "INSERT INTO entries (id, household_id, mode, started_at, ended_at, duration_seconds) VALUES ($1, $2, $3, TO_TIMESTAMP($4 / 1000.0), TO_TIMESTAMP($5 / 1000.0), $6) RETURNING id, mode, EXTRACT(EPOCH FROM started_at) * 1000 AS started_at, EXTRACT(EPOCH FROM ended_at) * 1000 AS ended_at, duration_seconds",
+          [deletion.deleted.id, householdId, deletion.deleted.mode, deletion.deleted.startedAt, deletion.deleted.endedAt, deletion.deleted.duration]
+        );
+        return serializeEntry(result.rows[0]);
       });
     },
     async deleteHousehold(householdId) {
@@ -373,15 +398,29 @@ function createMemoryStore() {
       const householdEntries = entries.get(householdId);
       const ordered = [...householdEntries].sort((a, b) => a.startedAt - b.startedAt || a.endedAt - b.endedAt || a.id.localeCompare(b.id));
       const index = ordered.findIndex((entry) => entry.id === entryId);
-      if (index === -1) return false;
+      if (index === -1) return null;
+      const deleted = { ...ordered[index] };
       const previous = ordered[index - 1] || null;
       const next = ordered[index + 1] || null;
+      const previousSnapshot = previous && next ? { ...previous } : null;
       if (previous && next) {
         previous.endedAt = next.startedAt;
         previous.duration = Math.floor((previous.endedAt - previous.startedAt) / 1000);
       }
       entries.set(householdId, householdEntries.filter((entry) => entry.id !== entryId));
-      return true;
+      return { deleted, previous: previousSnapshot };
+    },
+    async restoreEntry(householdId, deletion) {
+      assertMemoryHousehold(households, householdId);
+      const householdEntries = entries.get(householdId);
+      if (householdEntries.some((entry) => entry.id === deletion.deleted.id)) throw httpError(409, "That entry already exists.");
+      if (deletion.previous) {
+        const previous = householdEntries.find((entry) => entry.id === deletion.previous.id);
+        if (!previous) throw httpError(409, "The neighboring entry no longer exists.");
+        Object.assign(previous, deletion.previous);
+      }
+      householdEntries.push({ ...deletion.deleted });
+      return deletion.deleted;
     },
     async deleteHousehold(householdId) {
       if (!households.has(householdId)) return false;
@@ -457,6 +496,11 @@ async function handleApi(request, response, parts) {
 }
 
 async function handleEntryApi(request, response, householdId, entryId) {
+  if (request.method === "POST" && entryId === "restore") {
+    const deletion = parseEntryDeletion(await readJson(request));
+    sendJson(response, 200, await store.restoreEntry(householdId, deletion));
+    return;
+  }
   if (request.method === "POST" && !entryId) {
     const entry = parseEntry(await readJson(request));
     sendJson(response, 201, await store.createEntry(householdId, entry));
@@ -470,12 +514,14 @@ async function handleEntryApi(request, response, householdId, entryId) {
     return;
   }
   if (request.method === "DELETE" && entryId) {
-    if (await store.deleteEntry(householdId, entryId)) sendJson(response, 204);
+    const deletion = await store.deleteEntry(householdId, entryId);
+    if (deletion) sendJson(response, 200, deletion);
     else sendJson(response, 404, { error: "Entry not found" });
     return;
   }
   sendJson(response, 404, { error: "Not found" });
 }
+
 
 async function serveStatic(requestPath, response) {
   const requested = requestPath === "/" ? "index.html" : requestPath.slice(1);
@@ -501,7 +547,16 @@ function parseEntry(payload, id = payload?.id || randomUUID()) {
   const endedAt = Number(payload.endedAt);
   const duration = Math.floor(Number(payload.duration));
   if (!Number.isFinite(startedAt) || !Number.isFinite(endedAt) || !Number.isInteger(duration) || duration < 0) throw httpError(400, "Entry timestamps and duration are invalid");
+  if (endedAt < startedAt) throw httpError(400, "Entry end must be after its start.");
+  if (duration > Math.floor((endedAt - startedAt) / 1000)) throw httpError(400, "Entry duration cannot exceed its timestamps.");
   return { id, mode: payload.mode, startedAt, endedAt, duration };
+}
+function parseEntryDeletion(payload) {
+  if (!payload?.deleted?.id) throw httpError(400, "Deleted entry data is invalid");
+  return {
+    deleted: parseEntry(payload.deleted, payload.deleted.id),
+    previous: payload.previous ? parseEntry(payload.previous, payload.previous.id) : null
+  };
 }
 function parseTimerAction(payload) {
   const action = payload?.action;
