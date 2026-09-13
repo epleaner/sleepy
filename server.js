@@ -207,9 +207,26 @@ async function createStore() {
       });
     },
     async deleteEntry(householdId, entryId) {
-      await assertHousehold(pool, householdId);
-      const result = await pool.query("DELETE FROM entries WHERE household_id = $1 AND id = $2", [householdId, entryId]);
-      return Boolean(result.rowCount);
+      return withTransaction(pool, async (client) => {
+        const household = await client.query("SELECT id FROM households WHERE id = $1 FOR UPDATE", [householdId]);
+        if (!household.rowCount) throw httpError(404, "Household not found");
+        const result = await client.query(
+          "SELECT id, EXTRACT(EPOCH FROM started_at) * 1000 AS started_at, EXTRACT(EPOCH FROM ended_at) * 1000 AS ended_at FROM entries WHERE household_id = $1 ORDER BY started_at ASC, ended_at ASC, id ASC FOR UPDATE",
+          [householdId]
+        );
+        const index = result.rows.findIndex((entry) => entry.id === entryId);
+        if (index === -1) return false;
+        const previous = result.rows[index - 1] || null;
+        const next = result.rows[index + 1] || null;
+        await client.query("DELETE FROM entries WHERE household_id = $1 AND id = $2", [householdId, entryId]);
+        if (previous && next) {
+          await client.query(
+            "UPDATE entries SET ended_at = TO_TIMESTAMP($1 / 1000.0), duration_seconds = FLOOR(EXTRACT(EPOCH FROM (TO_TIMESTAMP($1 / 1000.0) - started_at)))::integer WHERE household_id = $2 AND id = $3",
+            [next.started_at, householdId, previous.id]
+          );
+        }
+        return true;
+      });
     },
     async deleteHousehold(householdId) {
       const result = await pool.query("DELETE FROM households WHERE id = $1", [householdId]);
@@ -354,9 +371,17 @@ function createMemoryStore() {
     async deleteEntry(householdId, entryId) {
       assertMemoryHousehold(households, householdId);
       const householdEntries = entries.get(householdId);
-      const remaining = householdEntries.filter((entry) => entry.id !== entryId);
-      entries.set(householdId, remaining);
-      return remaining.length !== householdEntries.length;
+      const ordered = [...householdEntries].sort((a, b) => a.startedAt - b.startedAt || a.endedAt - b.endedAt || a.id.localeCompare(b.id));
+      const index = ordered.findIndex((entry) => entry.id === entryId);
+      if (index === -1) return false;
+      const previous = ordered[index - 1] || null;
+      const next = ordered[index + 1] || null;
+      if (previous && next) {
+        previous.endedAt = next.startedAt;
+        previous.duration = Math.floor((previous.endedAt - previous.startedAt) / 1000);
+      }
+      entries.set(householdId, householdEntries.filter((entry) => entry.id !== entryId));
+      return true;
     },
     async deleteHousehold(householdId) {
       if (!households.has(householdId)) return false;

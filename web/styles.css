@@ -77,7 +77,7 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px s
 .total-value { display: block; margin-top: 7px; color: var(--ink); font-size: 1.55rem; font-weight: 400; font-variant-numeric: tabular-nums; }
 .panel-note { margin: 16px 0 0; color: var(--muted); font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; font-size: .78rem; }
 
-.controls { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-bottom: 20px; }
+.controls { display: flex; justify-content: center; gap: 12px; margin-bottom: 20px; }
 .primary-button, .secondary-button { min-height: 52px; border-radius: 999px; padding: 12px 16px; font-weight: 500; }
 .primary-button { border: 0; color: #fff; }
 .primary-button.wake { background: #8b6f47; }
@@ -133,8 +133,10 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px s
 .create-household-form input { width: 100%; min-height: 52px; padding: 12px 14px; border: 1px solid var(--border); border-radius: 3px; background: var(--panel-soft); color: var(--ink); }
 .create-household-form .primary-button { width: 100%; }
 .gate-divider { display: flex; align-items: center; gap: 12px; margin: 22px 0; color: var(--muted); }
-.share-button { display: inline-flex; align-items: center; gap: 7px; flex: 0 0 auto; border: 1px solid var(--border); border-radius: 999px; padding: 9px 12px; background: transparent; color: var(--muted); font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; font-size: .72rem; font-weight: 500; }
+.share-button { display: inline-flex; align-items: center; gap: 7px; flex: 0 0 auto; max-width: min(100%, 300px); border: 1px solid var(--border); border-radius: 999px; padding: 9px 12px; background: transparent; color: var(--muted); font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; font-size: .72rem; font-weight: 500; }
 .share-button .ui-icon { width: 1rem; height: 1rem; }
+.share-household-name { min-width: 0; overflow: hidden; color: var(--accent); font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.share-household-action { white-space: nowrap; }
 .gate-card label { display: block; margin-bottom: 8px; color: var(--muted); font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; font-size: .82rem; }
 .join-row { display: grid; grid-template-columns: 1fr auto; gap: 8px; }
 .join-row input { min-width: 0; min-height: 52px; padding: 12px 14px; border: 1px solid var(--border); border-radius: 3px; background: var(--panel-soft); color: var(--ink); }

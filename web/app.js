@@ -297,6 +297,9 @@ async function api(path, options = {}) {
 }
 
 function render() {
+  const shareButton = document.querySelector("#share-household");
+  shareButton.innerHTML = `<span class="share-household-name">${escapeHtml(householdId)}</span><span class="share-household-action">Share household</span>`;
+  shareButton.setAttribute("aria-label", `Share ${householdId} household`);
   document.querySelector("#today-date").textContent = new Intl.DateTimeFormat(undefined, { dateStyle: "long" }).format(new Date());
   timerScreen.classList.toggle("hidden", selectedTab !== "timer");
   entriesScreen.classList.toggle("hidden", selectedTab !== "entries");
@@ -843,7 +846,7 @@ async function saveEditedEntry(event) {
 async function deleteEntry(id) {
   try {
     await api(householdPath(householdId, `/entries/${id}`), { method: "DELETE" });
-    entries = entries.filter((entry) => entry.id !== id);
+    await loadHousehold(householdId);
     render();
   } catch (error) {
     showToast(error.message);
@@ -858,7 +861,7 @@ async function shareHousehold() {
   const shareUrl = url.toString();
   try {
     if (navigator.share) {
-      await navigator.share({ title: "Join our Sleepy household", text: "Use this link to share our Sleepy sleep log.", url: shareUrl });
+      await navigator.share({ title: "Join our Sleepy household", text: shareUrl });
       return;
     }
     await navigator.clipboard.writeText(shareUrl);
