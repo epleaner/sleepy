@@ -3,17 +3,15 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "vite --config vite.config.js web",
-    "api": "node server.js",
+    "dev": "npm run build && npm --prefix cloudflare run dev",
     "build": "vite build --config vite.config.js web --outDir ../dist",
-    "start": "node server.js",
-    "preview": "vite preview --config vite.config.js --host 0.0.0.0 --outDir dist"
+    "build:cloudflare": "npm run build && npm --prefix cloudflare run build",
+    "test": "node --test tests/*.test.js"
+  },
+  "dependencies": {
+    "@phosphor-icons/web": "^2.1.2"
   },
   "devDependencies": {
     "vite": "^8.2.2"
-  },
-  "dependencies": {
-    "@phosphor-icons/web": "^2.1.2",
-    "pg": "^8.23.0"
   }
 }
