@@ -2,6 +2,8 @@
 
 The vanilla web app in `web/` is unchanged. Production runs at **https://sleepy.elipleaner.com** on a native Cloudflare Worker with D1; https://nappy.elipleaner.workers.dev serves the same deployment and database. Keeping the original production origin preserves existing browser-local household selection and offline data. Vite builds public web assets to `dist/`; the dedicated `cloudflare/` project builds `../worker.js`, handles `/api/*`, and serves other paths from `../dist/`. The existing `epleaner-nappy` D1 database ID is pinned in `cloudflare/cloudflare.config.ts`; deployment never recreates or imports the database.
 
+Keep `cloudflare/wrangler.config.ts` checked in: it is the native SDK's required bundler input for the public asset directory, not a second Worker runtime configuration. Worker settings and bindings remain in `cloudflare/cloudflare.config.ts`; generated types/build output and local runtime state stay ignored under `.cloudflare/` and `.wrangler/`.
+
 ## Build and local checks
 
 Use Node 24.22+ and run `npm ci && npm --prefix cloudflare ci`; then `npm test` and `npm run build:cloudflare`.
