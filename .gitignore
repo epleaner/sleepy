@@ -6,6 +6,5 @@ node_modules/
 dist/
 .cloudflare/
 .wrangler/
-cloudflare/wrangler.config.ts
 .env
 .env.*
