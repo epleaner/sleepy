@@ -1,0 +1,14 @@
+{
+  "name": "nappy-cloudflare",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "cf build",
+    "dev": "cf dev",
+    "deploy": "cf deploy --prebuilt --provision=false"
+  },
+  "devDependencies": {
+    "cf": "1.0.0-beta.20",
+    "wrangler": "4.152.0"
+  }
+}
