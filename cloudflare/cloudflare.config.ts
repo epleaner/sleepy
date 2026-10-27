@@ -5,7 +5,7 @@ export default defineConfig({
   worker: {
     name: 'nappy',
     entrypoint: '../worker.js',
-    compatibilityDate: '2026-10-27',
+    compatibilityDate: '2026-10-26',
     workersDev: true,
     domains: ['sleepy.elipleaner.com'],
     assets: { notFoundHandling: 'single-page-application', runWorkerFirst: ['/api/*'] },

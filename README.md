@@ -4,7 +4,11 @@ The vanilla web app in `web/` is unchanged. Production runs at **https://sleepy.
 
 ## Build and local checks
 
-Use Node 24.22+ and run `npm ci && npm --prefix cloudflare ci`; then `npm test` and `npm run build:cloudflare`. For local development, initialize a **local** D1 database before API mutations: from `cloudflare/`, run `npx cf d1 migrations apply 5559540f-65d9-4a0f-9676-9ff37fee87d5 --dir ../migrations --local`; then run `npm run dev` from the repository root. Check the selected local/remote target before database commands. `curl -i http://localhost:8787/api/health` should return `200 {"ok":true}`. Use only a disposable household for timer, tummy, entry edit/delete/undo, join and DELETE smoke; never mutate imported household data during verification. For deployment, build first and run `npm --prefix cloudflare run deploy` using the authenticated `cf` CLI, or dispatch the repository's **Nappy Cloudflare** workflow.
+Use Node 24.22+ and run `npm ci && npm --prefix cloudflare ci`; then `npm test` and `npm run build:cloudflare`.
+
+For local development, initialize the native dev runtime's **local** D1 state before API mutations: from `cloudflare/`, run `npx cf d1 migrations apply 5559540f-65d9-4a0f-9676-9ff37fee87d5 --dir ../migrations --local --persist-to .wrangler/state`; then run `npm run dev` from the repository root. The explicit persistence directory matters: omitting it initializes the CLI's separate global simulator, not this dev server's database. Check the selected local/remote target before database commands. `curl -i http://localhost:8787/api/health` returns `200 {"ok":true}` after startup.
+
+Use only a disposable household for timer, tummy, entry edit/delete/undo, join and DELETE smoke; never mutate imported household data during verification. For deployment, build first and run `npm --prefix cloudflare run deploy` using the authenticated `cf` CLI, or dispatch the repository's **Nappy Cloudflare** workflow.
 
 ## Raw PostgreSQL field conversion (lossless)
 
